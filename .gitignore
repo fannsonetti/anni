@@ -1,0 +1,12 @@
+/target/
+/artifacts/
+*.db
+*.db-shm
+*.db-wal
+*.exe.WebView2/
+/tmp_*.py
+/dist/
+session.json
+desktop.json
+.env
+.env.*

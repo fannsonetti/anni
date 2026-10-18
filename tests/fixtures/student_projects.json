@@ -1,0 +1,59 @@
+[
+  {
+    "moduleName": "DANS1GR05",
+    "groupId": "100001",
+    "categories": [],
+    "assignments": [
+      {
+        "assignmentId": "200001",
+        "name": "Dagene",
+        "module": "DANS1GR05",
+        "groupId": "100001",
+        "exam": "1",
+        "weight": 0.0,
+        "grade": "10",
+        "handedIn": "1",
+        "orderAssignDate": "2026-08-21 10:24:00",
+        "orderHandInDate": "2026-08-23 23:59:00",
+        "projectId": "300001",
+        "hasOpened": "1"
+      },
+      {
+        "assignmentId": "200002",
+        "name": "Munnlegt - Præsentation",
+        "module": "DANS1GR05",
+        "groupId": "100001",
+        "exam": "0",
+        "weight": 1.0,
+        "grade": "10",
+        "handedIn": "1",
+        "orderAssignDate": "2026-08-20 09:10:00",
+        "orderHandInDate": "2026-09-06 23:59:00",
+        "commentByTeacher": "<p>Flot lavet :)</p>",
+        "projectId": "300002",
+        "hasOpened": "1"
+      }
+    ]
+  },
+  {
+    "moduleName": "ENSK2HF05",
+    "groupId": "100002",
+    "categories": [],
+    "assignments": [
+      {
+        "assignmentId": "200003",
+        "name": "Introduction",
+        "module": "ENSK2HF05",
+        "groupId": "100002",
+        "exam": "0",
+        "weight": 0.0,
+        "grade": "10",
+        "handedIn": "1",
+        "orderAssignDate": "2026-08-20 09:50:00",
+        "orderHandInDate": "2026-08-21 23:59:00",
+        "projectId": "300003",
+        "hasOpened": "1"
+      }
+    ]
+  }
+]

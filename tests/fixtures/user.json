@@ -1,0 +1,10 @@
+{
+  "studentId": "100001",
+  "userId": 999,
+  "schoolId": "SCH01",
+  "schoolShort": "MF",
+  "schoolLong": "Menntaskólinn í Flateyri",
+  "defaultTermId": "TERM2026",
+  "studentName": "Jón Jónsson",
+  "isStudent": true
+}

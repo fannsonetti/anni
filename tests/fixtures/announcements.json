@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2026-08-17T15:38:00",
+    "contentShort": "Dear students, Welcome to ENSK2HF05!",
+    "type": null,
+    "contentHtml": "<p>Dear students,</p><p>Welcome to <strong>ENSK2HF05</strong>!</p>",
+    "title": "Greetings!",
+    "userId": "12345",
+    "month": "August",
+    "sender": "Example Teacher",
+    "hasOpened": false,
+    "announcementId": "ANN001",
+    "day": "17",
+    "moduleName": "ENSK2HF05",
+    "group": "Bekkur 7"
+  }
+]

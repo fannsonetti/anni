@@ -1,0 +1,36 @@
+[
+  {
+    "moduleId": "100001",
+    "groupId": "200001",
+    "start": "2026-08-20T08:30:00.000Z",
+    "end": "2026-08-20T09:30:00.000Z",
+    "moduleTermId": "300001",
+    "titleShort": "DANS1GR05",
+    "allDay": false,
+    "startClock": "08:30",
+    "endClock": "09:30",
+    "teacher": "TST",
+    "classroom": "M203",
+    "group": "Bekkur 3 og 7",
+    "timetable_id": 0,
+    "maintable_id": 400001,
+    "studentRecordId": 500001
+  },
+  {
+    "moduleId": "100002",
+    "groupId": "200002",
+    "start": "2026-08-20T09:50:00.000Z",
+    "end": "2026-08-20T10:50:00.000Z",
+    "moduleTermId": "300002",
+    "titleShort": "ENSK2HF05",
+    "allDay": false,
+    "startClock": "09:50",
+    "endClock": "10:50",
+    "teacher": "TST",
+    "classroom": "A101",
+    "group": "Bekkur 7",
+    "timetable_id": 0,
+    "maintable_id": 400002,
+    "studentRecordId": 500002
+  }
+]
