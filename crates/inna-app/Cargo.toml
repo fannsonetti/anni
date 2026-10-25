@@ -1,6 +1,6 @@
 [package]
 name = "inna-app"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 
 [[bin]]
@@ -25,7 +25,6 @@ axum = "0.7"
 percent-encoding = { workspace = true }
 semver = "1"
 sha2 = "0.10"
-getrandom = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging", "Win32_Security"] }

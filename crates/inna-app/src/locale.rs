@@ -101,6 +101,8 @@ pub fn error(message: &str) -> String {
         }
         "invalid XSRF state" => "Please reconnect to INNA.".into(),
         "INNA did not return a student ID" => "INNA did not return a student ID.".into(),
+        "Could not forget your sign-in. Close any Anni sign-in windows and try again."
+        | "Could not save your INNA sign-in on this computer." => message.into(),
         _ => "Something went wrong. Try again or reconnect to INNA.".into(),
     }
 }

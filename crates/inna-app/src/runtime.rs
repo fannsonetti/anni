@@ -15,7 +15,7 @@ pub enum RuntimeMsg {
     AuthStarted,
     /// Phone auth server is ready; show this URL in the main UI.
     PhoneAuthReady(String),
-    BrowserAuthReady(String),
+    SignInForgotten,
     AuthFailed(String),
     TimetableUpdated(Vec<TimetableEntry>),
     AnnouncementsUpdated(Vec<Announcement>),
@@ -31,7 +31,6 @@ pub enum RuntimeMsg {
 pub struct Runtime {
     tx: mpsc::Sender<RuntimeMsg>,
     rt: tokio::runtime::Runtime,
-    browser_auth: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Runtime {
@@ -41,11 +40,7 @@ impl Runtime {
             .enable_all()
             .build()
             .expect("failed to create tokio runtime");
-        Self {
-            tx,
-            rt,
-            browser_auth: std::sync::Mutex::new(None),
-        }
+        Self { tx, rt }
     }
 
     pub fn start_session_check(&self, ctx: egui::Context) {
@@ -101,35 +96,24 @@ impl Runtime {
         }
     }
 
-    pub fn launch_browser_auth(&self, ctx: egui::Context) {
-        self.cancel_browser_auth();
+    pub fn forget_sign_in(&self, ctx: egui::Context) {
         let tx = self.tx.clone();
-        let _ = tx.send(RuntimeMsg::AuthStarted);
-        let task = self.rt.spawn(async move {
-            let result = match crate::browser_auth::start().await {
-                Ok(handle) => {
-                    let _ = tx.send(RuntimeMsg::BrowserAuthReady(handle.url.clone()));
-                    ctx.open_url(egui::OpenUrl::new_tab(&handle.url));
-                    ctx.request_repaint();
-                    handle.wait().await
-                }
-                Err(error) => Err(error),
-            };
-            match result {
-                Ok(session) => apply_session(session, &tx).await,
-                Err(error) => {
-                    let _ = tx.send(RuntimeMsg::AuthFailed(error));
-                }
-            }
+        self.rt.spawn_blocking(move || {
+            let result = inna_core::auth_profile::forget().and_then(|_| {
+                FileSessionStore::new(FileSessionStore::default_path())
+                    .clear()
+                    .map_err(std::io::Error::other)
+            });
+            let _ = tx.send(if result.is_ok() {
+                RuntimeMsg::SignInForgotten
+            } else {
+                RuntimeMsg::AuthFailed(
+                    "Could not forget your sign-in. Close any Anni sign-in windows and try again."
+                        .into(),
+                )
+            });
             ctx.request_repaint();
         });
-        *self.browser_auth.lock().unwrap() = Some(task);
-    }
-
-    pub fn cancel_browser_auth(&self) {
-        if let Some(task) = self.browser_auth.lock().unwrap().take() {
-            task.abort();
-        }
     }
 
     fn launch_phone_auth(&self, ctx: egui::Context) {
@@ -381,35 +365,11 @@ fn finish_auth_from_helper(
             let stdout = String::from_utf8_lossy(&out.stdout);
             match serde_json::from_str::<StoredSession>(stdout.trim()) {
                 Ok(session) => {
-                    let store = FileSessionStore::new(FileSessionStore::default_path());
-                    if let Err(e) = store.save(&session) {
-                        tracing::error!("failed to save session: {e}");
-                    }
-
-                    let client = match InnaClient::new() {
-                        Ok(c) => c,
-                        Err(e) => {
-                            let _ = tx.send(RuntimeMsg::AuthFailed(e.to_string()));
-                            ctx.request_repaint();
-                            return;
-                        }
-                    };
-                    client.load_session(&session);
-
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
                         .unwrap();
-                    match rt.block_on(client.current_user()) {
-                        Ok(user) => {
-                            let _ = tx.send(RuntimeMsg::Connected(user));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(RuntimeMsg::AuthFailed(format!(
-                                "session validation failed: {e}"
-                            )));
-                        }
-                    }
+                    rt.block_on(apply_session(session, &tx));
                 }
                 Err(e) => {
                     let _ = tx.send(RuntimeMsg::AuthFailed(format!(

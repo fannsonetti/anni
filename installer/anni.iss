@@ -1,6 +1,6 @@
 ; Build with scripts/build-installer.ps1 (Inno Setup 6.3 or newer).
 #ifndef AppVersion
-  #define AppVersion "0.2.2"
+  #define AppVersion "0.2.3"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\target\release"
@@ -13,9 +13,6 @@
 #endif
 #ifndef RuntimeDir
   #define RuntimeDir "..\artifacts\installer\crt"
-#endif
-#ifndef BrowserExtensionDir
-  #define BrowserExtensionDir "..\browser-extension"
 #endif
 
 [Setup]
@@ -53,7 +50,6 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Files]
 Source: "{#SourceDir}\anni.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\inna-auth.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#BrowserExtensionDir}\*"; DestDir: "{app}\browser-extension"; Excludes: "*.test.mjs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#RuntimeDir}\vcruntime140.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RuntimeDir}\vcruntime140_1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BootstrapperPath}"; Flags: dontcopy

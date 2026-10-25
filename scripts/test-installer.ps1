@@ -33,7 +33,7 @@ try {
             ('/DIR="' + $testDir + '"'),
             ('/LOG="' + (Join-Path $logDir "$pass.log") + '"')
         )
-        foreach ($file in @('anni.exe', 'inna-auth.exe', 'vcruntime140.dll', 'vcruntime140_1.dll', 'unins000.exe', 'browser-extension\manifest.json', 'browser-extension\background.mjs', 'browser-extension\bridge.mjs', 'browser-extension\pair.js', 'browser-extension\popup.html', 'browser-extension\popup.js', 'browser-extension\popup.css')) {
+        foreach ($file in @('anni.exe', 'inna-auth.exe', 'vcruntime140.dll', 'vcruntime140_1.dll', 'unins000.exe')) {
             if (-not (Test-Path -LiteralPath (Join-Path $testDir $file))) { throw "Missing installed file: $file" }
         }
         $installed = Get-ItemProperty -LiteralPath $registration

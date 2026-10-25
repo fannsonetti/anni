@@ -7,8 +7,12 @@ use inna_core::endpoints::INNA_BASE_URL;
 use inna_core::session::{SessionCookie, StoredSession};
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tao::platform::run_return::EventLoopExtRunReturn;
 use tao::window::WindowBuilder;
-use wry::WebViewBuilder;
+use wry::{WebContext, WebViewBuilder};
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Parser)]
 #[command(name = "inna-auth", about = "INNA authentication helper")]
@@ -31,17 +35,30 @@ fn main() {
     }
 
     tracing::info!("starting local WebView authentication");
-    run_local_login();
+    match run_local_login() {
+        Ok(session) => {
+            // All WebViews and their contexts have closed before the parent receives the session.
+            println!(
+                "{}",
+                serde_json::to_string(&session).expect("serialize session")
+            );
+        }
+        Err(error) => {
+            tracing::error!("{error}");
+            std::process::exit(1);
+        }
+    }
 }
 
-fn run_local_login() {
-    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+fn run_local_login() -> Result<StoredSession, String> {
+    let profile = inna_core::auth_profile::prepare().map_err(|_| "Could not open the remembered sign-in profile. Close other Anni sign-in windows and try again.".to_string())?;
+    let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
 
     let window = WindowBuilder::new()
         .with_title("anni · Sign in to INNA")
         .with_inner_size(tao::dpi::LogicalSize::new(1024.0, 700.0))
         .build(&event_loop)
-        .expect("failed to create window");
+        .map_err(|_| "Could not open the sign-in window.".to_string())?;
 
     let proxy = event_loop.create_proxy();
     let check_url = format!("{INNA_BASE_URL}{CHECK_URL}");
@@ -49,6 +66,7 @@ fn run_local_login() {
     let poll_script = format!(
         r#"
         (function() {{
+            if (!['nam.inna.is', 'r.inna.is'].includes(window.location.hostname)) return;
             if (window.__inna_polling) return;
             window.__inna_polling = true;
             async function check() {{
@@ -72,47 +90,48 @@ fn run_local_login() {
         "#
     );
 
-    let webview = WebViewBuilder::new()
+    let mut web_context = WebContext::new(Some(profile));
+    let webview = WebViewBuilder::new_with_web_context(&mut web_context)
+        .with_incognito(false)
         .with_url(INNA_BASE_URL)
         .with_initialization_script(&poll_script)
         .with_ipc_handler(move |msg| {
             let body = msg.body();
-            if body == "AUTH_OK" {
+            let trusted = url::Url::parse(&msg.uri().to_string()).ok().is_some_and(|url| {
+                url.scheme() == "https" && matches!(url.host_str(), Some("nam.inna.is" | "r.inna.is"))
+            });
+            if trusted && body == "AUTH_OK" {
                 let _ = proxy.send_event(UserEvent::AuthCompleted);
             }
         })
         .build(&window)
-        .expect("failed to create webview");
+        .map_err(|_| "Could not start the sign-in browser. Check WebView2 is installed and close any other Anni sign-in windows.".to_string())?;
 
-    event_loop.run(move |event, _target, control_flow| {
+    let mut result = None;
+    event_loop.run_return(|event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
             Event::UserEvent(UserEvent::AuthCompleted) => {
                 tracing::info!("auth signal received, extracting cookies");
-                match extract_session(&webview) {
-                    Ok(session) => {
-                        let json = serde_json::to_string(&session).expect("serialize session");
-                        println!("{json}");
-                        tracing::info!("authentication completed successfully");
-                        std::process::exit(0);
-                    }
-                    Err(e) => {
-                        tracing::error!("cookie extraction failed: {e}");
-                        std::process::exit(1);
-                    }
-                }
+                result = Some(extract_session(&webview));
+                *control_flow = ControlFlow::Exit;
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                tracing::error!("login window closed by user");
-                std::process::exit(1);
+                result = Some(Err("Sign-in cancelled.".into()));
+                *control_flow = ControlFlow::Exit;
             }
             _ => {}
         }
     });
+    // Close the native controller and release the profile before the process ends.
+    drop(webview);
+    drop(web_context);
+    drop(window);
+    result.unwrap_or_else(|| Err("Sign-in window stopped before connecting.".into()))
 }
 
 fn extract_session(webview: &wry::WebView) -> Result<StoredSession, String> {

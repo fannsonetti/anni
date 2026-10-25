@@ -99,7 +99,7 @@ try {
     }
     Assert-SignedDownload $bootstrapper 'O=Microsoft Corporation(,|$)'
 
-    & $IsccPath "/DAppVersion=$version" "/DSourceDir=$binaryDir" "/DOutputDir=$outputDir" "/DBootstrapperPath=$bootstrapper" "/DRuntimeDir=$runtimeDir" "/DBrowserExtensionDir=$(Join-Path $repoRoot 'browser-extension')" (Join-Path $repoRoot 'installer\anni.iss')
+    & $IsccPath "/DAppVersion=$version" "/DSourceDir=$binaryDir" "/DOutputDir=$outputDir" "/DBootstrapperPath=$bootstrapper" "/DRuntimeDir=$runtimeDir" (Join-Path $repoRoot 'installer\anni.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
     $installer = Join-Path $outputDir "Anni-$version-windows-x64-setup.exe"
     $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -74,7 +74,6 @@ pub struct AppData {
     last_sync: Option<Instant>,
     auth_in_progress: bool,
     phone_auth_url: Option<String>,
-    browser_auth_url: Option<String>,
     last_diagnostic: Option<Instant>,
 }
 
@@ -139,7 +138,6 @@ impl AppData {
             last_sync: None,
             auth_in_progress: false,
             phone_auth_url: None,
-            browser_auth_url: None,
             last_diagnostic: None,
         }
     }
@@ -202,37 +200,36 @@ impl AppData {
                     self.state.connection = ConnectionState::Connected;
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
-                    self.browser_auth_url = None;
                     self.state.storage_dirty = true;
                     self.request_refresh(ctx);
                 }
                 RuntimeMsg::SessionExpired => {
+                    if self.auth_in_progress { continue; }
                     crate::diagnostics::failure(crate::diagnostics::Resource::Connection, crate::diagnostics::Failure::SessionExpired);
                     self.state.connection = ConnectionState::SessionExpired;
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
-                    self.browser_auth_url = None;
                 }
                 RuntimeMsg::AuthNeeded => self.state.connection = ConnectionState::Starting,
                 RuntimeMsg::AuthStarted => {
                     self.state.navigate(Page::Connection);
                     self.auth_in_progress = true;
                     self.phone_auth_url = None;
-                    self.browser_auth_url = None;
                     self.state.connection = ConnectionState::Authenticating;
                 }
                 RuntimeMsg::PhoneAuthReady(url) => {
                     self.phone_auth_url = Some(url);
                     self.auth_in_progress = true;
                 }
-                RuntimeMsg::BrowserAuthReady(url) => {
-                    if self.auth_in_progress { self.browser_auth_url = Some(url); }
+                RuntimeMsg::SignInForgotten => {
+                    self.auth_in_progress = false;
+                    self.phone_auth_url = None;
+                    self.state.connection = ConnectionState::Starting;
                 }
                 RuntimeMsg::AuthFailed(error) => {
                     crate::diagnostics::failure(crate::diagnostics::Resource::Connection, crate::diagnostics::Failure::classify(&error));
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
-                    self.browser_auth_url = None;
                     self.state.connection = ConnectionState::Error(error);
                 }
                 RuntimeMsg::TimetableUpdated(data) => {
@@ -285,6 +282,7 @@ impl AppData {
                     }
                 }
                 RuntimeMsg::Offline => {
+                    if self.auth_in_progress { continue; }
                     crate::diagnostics::failure(crate::diagnostics::Resource::Connection, crate::diagnostics::Failure::Network);
                     self.state.connection = ConnectionState::Offline;
                 },
@@ -344,8 +342,12 @@ impl AppData {
     fn connection_action(&mut self, action: ui::connection::ConnectionAction, ctx: &egui::Context) {
         use ui::connection::ConnectionAction;
         match action {
-            ConnectionAction::ReconnectBrowser if !self.auth_in_progress && !self.state.refreshing => {
-                if let Some(rt) = &self.runtime { rt.launch_browser_auth(ctx.clone()); }
+            ConnectionAction::ForgetSignIn if !self.auth_in_progress && !self.state.refreshing && self.state.connection != ConnectionState::Authenticating => {
+                if let Some(rt) = &self.runtime {
+                    self.auth_in_progress = true;
+                    self.state.connection = ConnectionState::Authenticating;
+                    rt.forget_sign_in(ctx.clone());
+                }
             }
             ConnectionAction::ReconnectLocal | ConnectionAction::ReconnectPhone
                 if !self.auth_in_progress && !self.state.refreshing =>
@@ -541,24 +543,14 @@ impl AppData {
         egui::CentralPanel::default().frame(egui::Frame::none().fill(theme::BG_DARK).inner_margin(if wide { 26.0 } else { 18.0 })).show(ctx,|ui| {
             if self.auth_in_progress && self.state.selected_page==Page::Connection {
                 theme::card().show(ui,|ui| {
-                    if let Some(url)=&self.browser_auth_url {
-                        theme::page_title(ui,"Connect using your browser","Use the browser profile where you're already signed in to Google or INNA.");
-                        ui.hyperlink_to("Open browser connection page",url);
-                        ui.label("Install Anni Connect once using that page's instructions. Open INNA, then click Anni Connect → Connect this INNA account.");
-                        ui.label("Only your INNA session is handed to this computer. Your Google password stays in your browser.");
-                        if ui.button("Cancel browser connection").clicked(){
-                            if let Some(rt)=&self.runtime{rt.cancel_browser_auth();}
-                            self.auth_in_progress=false;
-                            self.browser_auth_url=None;
-                            self.state.connection=if self.state.user.is_some(){ConnectionState::SessionExpired}else{ConnectionState::Starting};
-                        }
-                    }else if let Some(url)=&self.phone_auth_url {
+                    if let Some(url)=&self.phone_auth_url {
                         theme::page_title(ui,"Connect INNA on your phone","Your phone and computer need to be on the same Wi-Fi network.");
                         ui.label("Open this address on your phone:");
                         ui.label(RichText::new(url).size(24.0).color(theme::ACCENT));
                         ui.label("Choose Open INNA, sign in, and keep the page open until the connection completes.");
                     }else{
-                        theme::page_title(ui,"Connecting to INNA…","Finish signing in in the browser window.");
+                        theme::page_title(ui,"Connecting to INNA…","Finish signing in in Anni's sign-in window.");
+                        ui.label("Your sign-in is remembered on this computer. Google or INNA may occasionally ask you to verify your account again.");
                     }
                     if ui.button("Back to Today").clicked(){self.state.navigate(Page::Home);}
                 });
@@ -758,7 +750,6 @@ mod tests {
                 last_sync: None,
                 auth_in_progress: false,
                 phone_auth_url: None,
-                browser_auth_url: None,
                 last_diagnostic: None,
             },
             tx,
@@ -843,6 +834,26 @@ mod tests {
             .state
             .last_sync
             .contains_key("homework"));
+    }
+
+    #[test]
+    fn forgetting_signin_keeps_the_cached_plan_and_background_failures_do_not_cancel_signin() {
+        let (mut app, tx) = test_app();
+        let ctx = egui::Context::default();
+        app.state.assignments = mock::mock_assignments();
+        app.state.planner.add("Keep this task", "Math", "").unwrap();
+        tx.send(RuntimeMsg::AuthStarted).unwrap();
+        tx.send(RuntimeMsg::SessionExpired).unwrap();
+        tx.send(RuntimeMsg::Offline).unwrap();
+        app.process_messages(&ctx);
+        assert!(app.auth_in_progress);
+        assert_eq!(app.state.connection, ConnectionState::Authenticating);
+        tx.send(RuntimeMsg::SignInForgotten).unwrap();
+        app.process_messages(&ctx);
+        assert!(!app.auth_in_progress);
+        assert_eq!(app.state.connection, ConnectionState::Starting);
+        assert!(!app.state.assignments.is_empty());
+        assert_eq!(app.state.planner.tasks[0].title, "Keep this task");
     }
 
     #[test]

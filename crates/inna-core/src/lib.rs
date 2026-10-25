@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod auth_profile;
 pub mod client;
 pub mod endpoints;
 pub mod error;
