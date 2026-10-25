@@ -14,10 +14,23 @@ pub struct AnniApp {
     shared: Arc<Mutex<AppData>>,
     planner_rect: egui::Rect,
     restore_window: bool,
+    update_gate: Option<crate::updates::Gate>,
+    fullscreen: bool,
 }
 
 impl AnniApp {
+    #[cfg(test)]
     pub fn new(cc: &eframe::CreationContext<'_>, mock_mode: bool, desktop_only: bool) -> Self {
+        Self::new_with_updates(cc, mock_mode, desktop_only, false, false)
+    }
+
+    pub fn new_with_updates(
+        cc: &eframe::CreationContext<'_>,
+        mock_mode: bool,
+        desktop_only: bool,
+        check_updates: bool,
+        fullscreen: bool,
+    ) -> Self {
         let area = crate::desktop_platform::work_area();
         let default_rect = egui::Rect::from_center_size(
             area.center(),
@@ -43,6 +56,9 @@ impl AnniApp {
             shared: Arc::new(Mutex::new(AppData::new(cc, mock_mode, desktop_only))),
             planner_rect,
             restore_window: true,
+            update_gate: check_updates
+                .then(|| crate::updates::Gate::start(&cc.egui_ctx, desktop_only, fullscreen)),
+            fullscreen,
         }
     }
 }
@@ -58,6 +74,8 @@ pub struct AppData {
     last_sync: Option<Instant>,
     auth_in_progress: bool,
     phone_auth_url: Option<String>,
+    browser_auth_url: Option<String>,
+    last_diagnostic: Option<Instant>,
 }
 
 impl AppData {
@@ -121,6 +139,8 @@ impl AppData {
             last_sync: None,
             auth_in_progress: false,
             phone_auth_url: None,
+            browser_auth_url: None,
+            last_diagnostic: None,
         }
     }
 
@@ -177,32 +197,42 @@ impl AppData {
                     self.state.connection = ConnectionState::Authenticating
                 }
                 RuntimeMsg::Connected(user) => {
+                    crate::diagnostics::record(crate::diagnostics::Event::Connected);
                     self.state.adopt_user(user);
                     self.state.connection = ConnectionState::Connected;
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
+                    self.browser_auth_url = None;
                     self.state.storage_dirty = true;
                     self.request_refresh(ctx);
                 }
                 RuntimeMsg::SessionExpired => {
+                    crate::diagnostics::failure(crate::diagnostics::Resource::Connection, crate::diagnostics::Failure::SessionExpired);
                     self.state.connection = ConnectionState::SessionExpired;
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
+                    self.browser_auth_url = None;
                 }
                 RuntimeMsg::AuthNeeded => self.state.connection = ConnectionState::Starting,
                 RuntimeMsg::AuthStarted => {
                     self.state.navigate(Page::Connection);
                     self.auth_in_progress = true;
                     self.phone_auth_url = None;
+                    self.browser_auth_url = None;
                     self.state.connection = ConnectionState::Authenticating;
                 }
                 RuntimeMsg::PhoneAuthReady(url) => {
                     self.phone_auth_url = Some(url);
                     self.auth_in_progress = true;
                 }
+                RuntimeMsg::BrowserAuthReady(url) => {
+                    if self.auth_in_progress { self.browser_auth_url = Some(url); }
+                }
                 RuntimeMsg::AuthFailed(error) => {
+                    crate::diagnostics::failure(crate::diagnostics::Resource::Connection, crate::diagnostics::Failure::classify(&error));
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
+                    self.browser_auth_url = None;
                     self.state.connection = ConnectionState::Error(error);
                 }
                 RuntimeMsg::TimetableUpdated(data) => {
@@ -227,17 +257,37 @@ impl AppData {
                     self.synced("todo");
                 }
                 RuntimeMsg::SyncError(resource, error) => {
+                    crate::diagnostics::failure(crate::diagnostics::Resource::from_name(&resource), crate::diagnostics::Failure::classify(&error));
                     tracing::warn!("{resource} sync failed: {error}");
                     self.state.sync_errors.insert(resource, error);
                 }
-                RuntimeMsg::SyncFinished => self.state.refreshing = false,
+                RuntimeMsg::SyncFinished => {
+                    self.state.refreshing = false;
+                    if !self.mock_mode && self.last_diagnostic.is_none_or(|last| last.elapsed().as_secs() >= 3600) {
+                        crate::diagnostics::record(crate::diagnostics::Event::SyncSummary {
+                            lessons: self.state.timetable.iter().filter(|entry| entry.is_lesson()).count(),
+                            courses: self.state.assignments.len(), homework: self.state.homework.len(),
+                            warnings: self.state.sync_errors.len(),
+                            generic_course_labels: self.state.timetable.iter().filter(|entry| entry.is_lesson()
+                                && ui::assignments::subject(entry.course_code()) == entry.course_code()).count(),
+                            non_lesson_entries: self.state.timetable.iter().filter(|entry| !entry.is_lesson()).count(),
+                            invalid_lesson_times: self.state.timetable.iter().filter(|entry| entry.is_lesson()
+                                && (entry.start.as_deref().and_then(crate::planner::parse_deadline).is_none()
+                                    || entry.end.as_deref().and_then(crate::planner::parse_deadline).is_none())).count(),
+                        });
+                        self.last_diagnostic = Some(Instant::now());
+                    }
+                },
                 RuntimeMsg::PingOk => {
                     if self.state.connection == ConnectionState::Offline {
                         self.state.connection = ConnectionState::Connected;
                         self.state.refresh_requested = true;
                     }
                 }
-                RuntimeMsg::Offline => self.state.connection = ConnectionState::Offline,
+                RuntimeMsg::Offline => {
+                    crate::diagnostics::failure(crate::diagnostics::Resource::Connection, crate::diagnostics::Failure::Network);
+                    self.state.connection = ConnectionState::Offline;
+                },
             }
         }
     }
@@ -283,6 +333,7 @@ impl AppData {
                 Ok(()) => self.state.storage_error = None,
                 Err(error) => {
                     tracing::warn!("Could not save planner: {error}");
+                    crate::diagnostics::failure(crate::diagnostics::Resource::Storage, crate::diagnostics::Failure::Storage);
                     self.state.storage_error =
                         Some("Could not save changes. Keep Anni open and try saving again.".into())
                 }
@@ -293,6 +344,9 @@ impl AppData {
     fn connection_action(&mut self, action: ui::connection::ConnectionAction, ctx: &egui::Context) {
         use ui::connection::ConnectionAction;
         match action {
+            ConnectionAction::ReconnectBrowser if !self.auth_in_progress && !self.state.refreshing => {
+                if let Some(rt) = &self.runtime { rt.launch_browser_auth(ctx.clone()); }
+            }
             ConnectionAction::ReconnectLocal | ConnectionAction::ReconnectPhone
                 if !self.auth_in_progress && !self.state.refreshing =>
             {
@@ -333,6 +387,21 @@ impl eframe::App for AnniApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Some(gate) = &mut self.update_gate {
+            match gate.show(ctx) {
+                crate::updates::GateAction::Wait => return,
+                crate::updates::GateAction::Close => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    return;
+                }
+                crate::updates::GateAction::Continue => {
+                    self.update_gate = None;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
+                }
+            }
+        }
         if self.restore_window {
             ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
                 800.0, 480.0,
@@ -392,13 +461,9 @@ impl AppData {
             // A second launch can reveal the root through the native instance handler.
             self.desktop.planner_hidden = false;
         }
-        if ctx.input(|i| i.viewport().close_requested())
-            && self.desktop.settings.enabled
-            && !self.desktop.quit_requested
-        {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        if ctx.input(|i| i.viewport().close_requested()) && !self.desktop.quit_requested {
             self.desktop.handle(
-                crate::desktop::DesktopAction::HidePlanner,
+                crate::desktop::DesktopAction::Quit,
                 ctx,
                 &mut self.state,
             );
@@ -476,7 +541,18 @@ impl AppData {
         egui::CentralPanel::default().frame(egui::Frame::none().fill(theme::BG_DARK).inner_margin(if wide { 26.0 } else { 18.0 })).show(ctx,|ui| {
             if self.auth_in_progress && self.state.selected_page==Page::Connection {
                 theme::card().show(ui,|ui| {
-                    if let Some(url)=&self.phone_auth_url {
+                    if let Some(url)=&self.browser_auth_url {
+                        theme::page_title(ui,"Connect using your browser","Use the browser profile where you're already signed in to Google or INNA.");
+                        ui.hyperlink_to("Open browser connection page",url);
+                        ui.label("Install Anni Connect once using that page's instructions. Open INNA, then click Anni Connect → Connect this INNA account.");
+                        ui.label("Only your INNA session is handed to this computer. Your Google password stays in your browser.");
+                        if ui.button("Cancel browser connection").clicked(){
+                            if let Some(rt)=&self.runtime{rt.cancel_browser_auth();}
+                            self.auth_in_progress=false;
+                            self.browser_auth_url=None;
+                            self.state.connection=if self.state.user.is_some(){ConnectionState::SessionExpired}else{ConnectionState::Starting};
+                        }
+                    }else if let Some(url)=&self.phone_auth_url {
                         theme::page_title(ui,"Connect INNA on your phone","Your phone and computer need to be on the same Wi-Fi network.");
                         ui.label("Open this address on your phone:");
                         ui.label(RichText::new(url).size(24.0).color(theme::ACCENT));
@@ -504,6 +580,7 @@ impl AppData {
                         theme::page_title(ui, "Settings", "Desktop widgets, your INNA connection, and local data.");
                         let desktop_action = self.desktop.settings_ui(ui, self.mock_mode);
                         self.desktop.handle(desktop_action, ctx, &mut self.state);
+                        crate::diagnostics::settings_ui(ui, self.mock_mode);
                         let action=ui::connection::show(ui,&mut self.state);self.connection_action(action,ctx);
                     }
                 }
@@ -522,6 +599,18 @@ mod tests {
     #[test]
     #[ignore = "opens temporary mock windows; run with --ignored --test-threads=1"]
     fn native_hide_and_quit_from_a_hidden_planner() {
+        native_lifecycle(false);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "opens temporary mock windows; run separately with --ignored --test-threads=1"]
+    fn native_close_button_exits_with_widgets_enabled() {
+        native_lifecycle(true);
+    }
+
+    #[cfg(windows)]
+    fn native_lifecycle(close_button: bool) {
         use crate::desktop::DesktopAction;
         use winit::platform::windows::EventLoopBuilderExtWindows;
         const TITLE: &str = "anni-native-lifecycle-test";
@@ -545,6 +634,7 @@ mod tests {
             app: AnniApp,
             progress: Arc<Mutex<Progress>>,
             started: Instant,
+            close_button: bool,
         }
         impl eframe::App for Harness {
             fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -552,6 +642,7 @@ mod tests {
                 let shared = self.app.shared.clone();
                 let progress = self.progress.clone();
                 let started = self.started;
+                let close_button = self.close_button;
                 ctx.show_viewport_deferred(
                     egui::ViewportId::from_hash_of("native_lifecycle_driver"),
                     egui::ViewportBuilder::default()
@@ -578,10 +669,26 @@ mod tests {
                             app.finish_update(ctx);
                             progress.stage = 2;
                         } else if progress.stage == 2 && elapsed.as_secs_f32() >= 1.5 {
+                            if close_button {
+                                app.desktop.planner_hidden = false;
+                                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Visible(true));
+                                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+                                progress.stage = 3;
+                            } else {
                             let AppData { state, desktop, .. } = &mut *app;
                             desktop.handle(DesktopAction::Quit, ctx, state);
                             app.finish_update(ctx);
-                            progress.stage = 3;
+                            progress.stage = 4;
+                            }
+                        } else if progress.stage == 3 && elapsed.as_secs_f32() >= 2.0 {
+                            assert!(root_visible());
+                            let title: Vec<u16> = TITLE.encode_utf16().chain(Some(0)).collect();
+                            unsafe {
+                                use windows_sys::Win32::UI::WindowsAndMessaging::*;
+                                let root = FindWindowW(std::ptr::null(), title.as_ptr());
+                                PostMessageW(root, WM_CLOSE, 0, 0);
+                            }
+                            progress.stage = 4;
                         } else if elapsed.as_secs() >= 5 {
                             progress.timed_out = true;
                             ctx.send_viewport_cmd_to(
@@ -624,12 +731,13 @@ mod tests {
                     app: AnniApp::new(cc, true, true),
                     progress,
                     started: Instant::now(),
+                    close_button,
                 }))
             }),
         )
         .unwrap();
         let progress = result.lock().unwrap();
-        assert_eq!(progress.stage, 3);
+        assert_eq!(progress.stage, 4);
         assert!(
             !progress.timed_out,
             "Quit needed a visible planner to finish"
@@ -650,6 +758,8 @@ mod tests {
                 last_sync: None,
                 auth_in_progress: false,
                 phone_auth_url: None,
+                browser_auth_url: None,
+                last_diagnostic: None,
             },
             tx,
         )
@@ -661,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_newly_focused_planner_preserves_its_hidden_state() {
+    fn closing_a_newly_focused_planner_quits_instead_of_leaving_a_transparent_window() {
         let (mut app, _) = test_app();
         app.mock_mode = true;
         app.desktop.settings.enabled = true;
@@ -676,11 +786,11 @@ mod tests {
             .events
             .push(egui::ViewportEvent::Close);
         let output = ctx.run(input, |ctx| app.planner_ui(ctx));
-        assert!(app.desktop.planner_hidden);
+        assert!(app.desktop.quit_requested);
         assert!(output.viewport_output[&egui::ViewportId::ROOT]
             .commands
-            .contains(&egui::ViewportCommand::Visible(false)));
-        assert!(output.viewport_output[&egui::ViewportId::ROOT]
+            .contains(&egui::ViewportCommand::Close));
+        assert!(!output.viewport_output[&egui::ViewportId::ROOT]
             .commands
             .contains(&egui::ViewportCommand::CancelClose));
     }

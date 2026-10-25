@@ -30,7 +30,7 @@ pub fn sidebar(ctx: &egui::Context, state: &mut AppState) {
             ui.add_space(26.0);
 
             // The footer has its own space; the menu scrolls on short desktop windows.
-            let menu_height = (ui.available_height() - 126.0).max(100.0);
+            let menu_height = (ui.available_height() - 106.0).max(100.0);
             egui::ScrollArea::vertical()
                 .id_salt("sidebar_pages")
                 .max_height(menu_height)
@@ -40,11 +40,6 @@ pub fn sidebar(ctx: &egui::Context, state: &mut AppState) {
                     group(ui, state, "SCHOOL", Page::SCHOOL_PAGES);
                 });
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.label(
-                    RichText::new("Unofficial · data from INNA")
-                        .size(10.0)
-                        .color(theme::TEXT_DIM),
-                );
                 if let Some(user) = &state.user {
                     ui.label(
                         RichText::new(user.display_name())

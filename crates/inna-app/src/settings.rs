@@ -21,11 +21,14 @@ pub enum ClockStyle {
 pub enum DesktopTheme {
     #[default]
     Minimal,
-    Arc,
-    IronMan,
+    #[serde(alias = "Arc")]
+    Ocean,
+    #[serde(alias = "IronMan")]
+    Sand,
     Forest,
     Lavender,
     Sunset,
+    HighContrast,
 }
 
 pub struct DesktopPalette {
@@ -37,34 +40,37 @@ pub struct DesktopPalette {
 }
 
 impl DesktopTheme {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Minimal,
-        Self::Arc,
-        Self::IronMan,
+        Self::Ocean,
+        Self::Sand,
         Self::Forest,
         Self::Lavender,
         Self::Sunset,
+        Self::HighContrast,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Minimal => "Minimal",
-            Self::Arc => "Arc",
-            Self::IronMan => "Iron Man",
+            Self::Ocean => "Ocean",
+            Self::Sand => "Sand",
             Self::Forest => "Forest",
             Self::Lavender => "Lavender",
             Self::Sunset => "Sunset",
+            Self::HighContrast => "High contrast",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
             Self::Minimal => "Soft white, neutral charcoal, and a simple digital clock.",
-            Self::Arc => "Ice blue with a fine, open reactor ring.",
-            Self::IronMan => "Warm gold, deep burgundy, and a restrained reactor ring.",
+            Self::Ocean => "Calm blue with deep navy backgrounds and a simple digital clock.",
+            Self::Sand => "Warm cream and soft gold on neutral brown backgrounds.",
             Self::Forest => "Sage green with warm, natural neutrals.",
             Self::Lavender => "Soft lilac with cool violet neutrals.",
             Self::Sunset => "Muted peach with warm cocoa neutrals.",
+            Self::HighContrast => "Bright white and yellow on dark panels for easier reading.",
         }
     }
 
@@ -77,17 +83,17 @@ impl DesktopTheme {
                 [225, 227, 232],
                 [18, 19, 21],
             ),
-            Self::Arc => (
+            Self::Ocean => (
                 [226, 242, 246],
                 [149, 177, 187],
                 [111, 211, 232],
                 [12, 24, 32],
             ),
-            Self::IronMan => (
+            Self::Sand => (
                 [246, 235, 218],
                 [190, 164, 151],
                 [225, 184, 104],
-                [36, 18, 22],
+                [30, 26, 21],
             ),
             Self::Forest => (
                 [233, 241, 231],
@@ -107,6 +113,7 @@ impl DesktopTheme {
                 [236, 174, 143],
                 [34, 24, 23],
             ),
+            Self::HighContrast => ([255, 255, 255], [224, 224, 224], [255, 225, 90], [0, 0, 0]),
         };
         let color = |rgb: [u8; 3]| C::from_rgb(rgb[0], rgb[1], rgb[2]);
         DesktopPalette {
@@ -211,10 +218,11 @@ impl DesktopSettings {
     pub fn select_theme(&mut self, theme: DesktopTheme) {
         self.theme = theme;
         self.accent = DesktopAccent::Theme;
-        self.clock_style = match theme {
-            DesktopTheme::Arc | DesktopTheme::IronMan => ClockStyle::Reactor,
-            _ => ClockStyle::Digital,
-        };
+        self.clock_style = ClockStyle::Digital;
+        if theme == DesktopTheme::HighContrast {
+            self.panel_opacity = 80;
+            self.text_scale = self.text_scale.max(110);
+        }
     }
 
     pub fn path() -> PathBuf {
@@ -233,6 +241,13 @@ impl DesktopSettings {
             Ok(bytes) => {
                 let mut settings: Self = serde_json::from_slice(&bytes)
                     .map_err(|_| "Could not load desktop preferences.".to_string())?;
+                // Replace the old themed clock without resetting layout or content choices.
+                let legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+                if matches!(legacy["theme"].as_str(), Some("Arc" | "IronMan"))
+                    && settings.clock_style == ClockStyle::Reactor
+                {
+                    settings.clock_style = ClockStyle::Digital;
+                }
                 settings.panel_opacity = settings.panel_opacity.min(80);
                 settings.clock_scale = settings.clock_scale.clamp(80, 180);
                 settings.panel_width = settings.panel_width.clamp(280, 480);
@@ -274,13 +289,37 @@ impl DesktopSettings {
 mod tests {
     use super::*;
     #[test]
+    fn old_themes_migrate_without_losing_layout_and_new_presets_use_digital_clocks() {
+        let path =
+            std::env::temp_dir().join(format!("anni-theme-test-{}.json", std::process::id()));
+        for (old, new) in [
+            ("Arc", DesktopTheme::Ocean),
+            ("IronMan", DesktopTheme::Sand),
+        ] {
+            std::fs::write(&path, format!(r#"{{"theme":"{old}","clock_style":"Reactor","panel_width":420,"enabled":true}}"#)).unwrap();
+            let settings = DesktopSettings::load_from(&path).unwrap();
+            assert_eq!(settings.theme, new);
+            assert_eq!(settings.clock_style, ClockStyle::Digital);
+            assert_eq!(settings.panel_width, 420);
+            assert!(settings.enabled);
+        }
+        let mut settings = DesktopSettings::default();
+        for theme in DesktopTheme::ALL {
+            settings.select_theme(theme);
+            assert_eq!(settings.clock_style, ClockStyle::Digital);
+        }
+        assert_eq!(settings.panel_opacity, 80);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn preferences_restore_with_defaults_and_reject_corrupt_data() {
         let path =
             std::env::temp_dir().join(format!("anni-desktop-test-{}.json", std::process::id()));
         let settings = DesktopSettings {
             enabled: true,
             side: DesktopSide::Left,
-            theme: DesktopTheme::IronMan,
+            theme: DesktopTheme::Sand,
             accent: DesktopAccent::Custom,
             custom_accent: [235, 181, 102],
             clock_style: ClockStyle::Analog,

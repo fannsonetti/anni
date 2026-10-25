@@ -15,6 +15,7 @@ pub enum RuntimeMsg {
     AuthStarted,
     /// Phone auth server is ready; show this URL in the main UI.
     PhoneAuthReady(String),
+    BrowserAuthReady(String),
     AuthFailed(String),
     TimetableUpdated(Vec<TimetableEntry>),
     AnnouncementsUpdated(Vec<Announcement>),
@@ -30,6 +31,7 @@ pub enum RuntimeMsg {
 pub struct Runtime {
     tx: mpsc::Sender<RuntimeMsg>,
     rt: tokio::runtime::Runtime,
+    browser_auth: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Runtime {
@@ -39,7 +41,11 @@ impl Runtime {
             .enable_all()
             .build()
             .expect("failed to create tokio runtime");
-        Self { tx, rt }
+        Self {
+            tx,
+            rt,
+            browser_auth: std::sync::Mutex::new(None),
+        }
     }
 
     pub fn start_session_check(&self, ctx: egui::Context) {
@@ -92,6 +98,37 @@ impl Runtime {
             self.launch_phone_auth(ctx);
         } else {
             self.launch_local_auth(ctx);
+        }
+    }
+
+    pub fn launch_browser_auth(&self, ctx: egui::Context) {
+        self.cancel_browser_auth();
+        let tx = self.tx.clone();
+        let _ = tx.send(RuntimeMsg::AuthStarted);
+        let task = self.rt.spawn(async move {
+            let result = match crate::browser_auth::start().await {
+                Ok(handle) => {
+                    let _ = tx.send(RuntimeMsg::BrowserAuthReady(handle.url.clone()));
+                    ctx.open_url(egui::OpenUrl::new_tab(&handle.url));
+                    ctx.request_repaint();
+                    handle.wait().await
+                }
+                Err(error) => Err(error),
+            };
+            match result {
+                Ok(session) => apply_session(session, &tx).await,
+                Err(error) => {
+                    let _ = tx.send(RuntimeMsg::AuthFailed(error));
+                }
+            }
+            ctx.request_repaint();
+        });
+        *self.browser_auth.lock().unwrap() = Some(task);
+    }
+
+    pub fn cancel_browser_auth(&self) {
+        if let Some(task) = self.browser_auth.lock().unwrap().take() {
+            task.abort();
         }
     }
 
@@ -306,11 +343,6 @@ async fn wait_for_phone_session(
 }
 
 async fn apply_session(session: StoredSession, tx: &mpsc::Sender<RuntimeMsg>) {
-    let store = FileSessionStore::new(FileSessionStore::default_path());
-    if let Err(e) = store.save(&session) {
-        tracing::error!("failed to save session: {e}");
-    }
-
     let client = match InnaClient::new() {
         Ok(c) => c,
         Err(e) => {
@@ -322,6 +354,13 @@ async fn apply_session(session: StoredSession, tx: &mpsc::Sender<RuntimeMsg>) {
 
     match client.current_user().await {
         Ok(user) => {
+            let store = FileSessionStore::new(FileSessionStore::default_path());
+            if store.save(&session).is_err() {
+                let _ = tx.send(RuntimeMsg::AuthFailed(
+                    "Could not save your INNA sign-in on this computer.".into(),
+                ));
+                return;
+            }
             let _ = tx.send(RuntimeMsg::Connected(user));
         }
         Err(e) => {

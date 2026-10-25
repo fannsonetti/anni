@@ -376,6 +376,7 @@ fn desktop_lessons(state: &AppState, now: NaiveDateTime) -> (NaiveDate, Vec<&Tim
         .timetable
         .iter()
         .filter_map(|entry| {
+            if !entry.is_lesson() { return None; }
             let start = planner::parse_deadline(entry.start.as_deref()?)?.at;
             let end = entry
                 .end
@@ -493,11 +494,7 @@ fn schedule_content(
                                             let subject = crate::ui::assignments::subject(
                                                 lesson.course_code(),
                                             );
-                                            let title = if subject == "Course" {
-                                                lesson.course_code()
-                                            } else {
-                                                subject
-                                            };
+                                            let title = subject;
                                             ui.add(
                                                 egui::Label::new(
                                                     RichText::new(title).size(15.0 * scale).color(

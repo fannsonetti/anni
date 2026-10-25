@@ -295,7 +295,7 @@ impl AppState {
             .timetable
             .iter()
             .filter(|e| {
-                e.start
+                e.is_lesson() && e.start
                     .as_deref()
                     .map(|s| s.starts_with(&key))
                     .unwrap_or(false)
@@ -317,6 +317,7 @@ impl AppState {
             .timetable
             .iter()
             .filter_map(|e| {
+                if !e.is_lesson() { return None; }
                 let start = crate::planner::parse_deadline(e.start.as_deref()?)?.at;
                 let end = crate::planner::parse_deadline(e.end.as_deref()?)?.at;
                 Some((e, start, end))
@@ -419,6 +420,7 @@ mod tests {
     fn next_lesson_crosses_weekends_and_today_ignores_schedule_navigation() {
         let mut state = AppState::new();
         state.timetable = serde_json::from_value(serde_json::json!([
+            {"titleShort":"Vetrarfrí", "start":"2026-10-18T00:00:00Z", "end":"2026-10-20T23:59:00Z", "allDay":true},
             {"titleShort":"Later", "start":"2026-10-19T10:00:00Z", "end":"2026-10-19T11:00:00Z", "startClock":"10:00"},
             {"titleShort":"First", "start":"2026-10-19T08:30:00Z", "end":"2026-10-19T09:30:00Z", "startClock":"08:30"}
         ])).unwrap();
@@ -447,6 +449,8 @@ mod tests {
             state.lessons_for_date(monday.date())[0].course_code(),
             "First"
         );
+        assert_eq!(state.lessons_for_date(monday.date()).len(), 2);
+        assert!(state.lessons_for_date(sunday.date()).is_empty());
         state.selected_date = Utc::now().date_naive() + chrono::Duration::days(100);
         assert_eq!(
             state.today_lessons().len(),

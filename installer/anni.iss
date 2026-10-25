@@ -1,6 +1,6 @@
 ; Build with scripts/build-installer.ps1 (Inno Setup 6.3 or newer).
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.2"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\target\release"
@@ -13,6 +13,9 @@
 #endif
 #ifndef RuntimeDir
   #define RuntimeDir "..\artifacts\installer\crt"
+#endif
+#ifndef BrowserExtensionDir
+  #define BrowserExtensionDir "..\browser-extension"
 #endif
 
 [Setup]
@@ -33,6 +36,7 @@ OutputBaseFilename=Anni-{#AppVersion}-windows-x64-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\crates\inna-app\assets\anni.ico
 UninstallDisplayIcon={app}\anni.exe
 CloseApplications=yes
 RestartApplications=no
@@ -41,10 +45,15 @@ VersionInfoVersion={#AppVersion}
 
 [Tasks]
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
+Name: startup; Description: "Start Anni and check for updates when I sign in to Windows"; GroupDescription: "Startup:"; Flags: checkedonce
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "anni"; ValueData: """{app}\anni.exe"" --desktop"; Tasks: startup; Check: not IsAutomaticUpdate
 
 [Files]
 Source: "{#SourceDir}\anni.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\inna-auth.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BrowserExtensionDir}\*"; DestDir: "{app}\browser-extension"; Excludes: "*.test.mjs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#RuntimeDir}\vcruntime140.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RuntimeDir}\vcruntime140_1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BootstrapperPath}"; Flags: dontcopy
@@ -60,6 +69,11 @@ Filename: "{app}\anni.exe"; Description: "Open Anni"; Flags: nowait postinstall 
 [Code]
 const
   WebViewKey = 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+
+function IsAutomaticUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:AUTOMATICUPDATE|0}') = '1';
+end;
 
 function HasRuntime(Root: Integer): Boolean;
 var

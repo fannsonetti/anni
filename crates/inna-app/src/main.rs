@@ -1,8 +1,10 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod browser_auth;
 mod desktop;
 mod desktop_platform;
+mod diagnostics;
 mod focus;
 mod grades;
 mod locale;
@@ -14,11 +16,12 @@ mod runtime;
 mod settings;
 mod state;
 mod ui;
+mod updates;
 
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "anni", about = "anni — your school planner for INNA")]
+#[command(name = "anni", version, about = "anni — your school planner for INNA")]
 struct Cli {
     /// Use sample data without connecting to INNA
     #[arg(long)]
@@ -35,6 +38,22 @@ struct Cli {
     /// Test session validity and exit
     #[arg(long)]
     test_session: bool,
+
+    /// Internal: the update helper reopens the app without checking a second time
+    #[arg(long, hide = true)]
+    skip_update: bool,
+
+    /// Internal: apply a verified staged update from a separate copy of Anni
+    #[arg(long, hide = true)]
+    apply_update: Option<std::path::PathBuf>,
+
+    /// Preview the startup update animation without connecting or installing
+    #[arg(long)]
+    preview_update: bool,
+
+    /// Receive anonymous bug reports on TCP port 3000 on this computer
+    #[arg(long)]
+    diagnostics_server: bool,
 }
 
 fn main() {
@@ -45,6 +64,18 @@ fn main() {
         .init();
 
     tracing::info!("starting anni");
+
+    if let Some(path) = &cli.apply_update {
+        if let Err(error) = updates::run_apply(path) {
+            tracing::error!("Update launcher failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if cli.preview_update {
+        updates::preview();
+        return;
+    }
 
     if cli.test_session {
         if let Err(error) = verify_schoolwork() {
@@ -64,18 +95,25 @@ fn main() {
         None
     };
 
+    diagnostics::init(cli.mock, cli.diagnostics_server);
+
+    let check_updates = updates::should_check(cli.mock, cli.skip_update);
     let options = eframe::NativeOptions {
         // Native auto-save also runs on child widgets. Anni stores root bounds itself.
         persist_window: false,
-        viewport: egui::ViewportBuilder::default()
-            .with_title(ui::brand::NAME)
-            .with_app_id(if cli.mock { "anni-preview" } else { "anni" })
-            .with_icon(ui::brand::icon())
-            // All viewports share the root's GL configuration, including its alpha channel.
-            .with_transparent(true)
-            .with_inner_size([1280.0, 860.0])
-            .with_min_inner_size([800.0, 480.0])
-            .with_fullscreen(cli.fullscreen),
+        viewport: if check_updates {
+            updates::viewport().with_app_id("anni")
+        } else {
+            egui::ViewportBuilder::default()
+                .with_title(ui::brand::NAME)
+                .with_app_id(if cli.mock { "anni-preview" } else { "anni" })
+                .with_icon(ui::brand::icon())
+                // All viewports share the root's GL configuration, including its alpha channel.
+                .with_transparent(true)
+                .with_inner_size([1280.0, 860.0])
+                .with_min_inner_size([800.0, 480.0])
+                .with_fullscreen(cli.fullscreen)
+        },
         ..Default::default()
     };
 
@@ -84,7 +122,15 @@ fn main() {
     eframe::run_native(
         ui::brand::NAME,
         options,
-        Box::new(move |cc| Ok(Box::new(app::AnniApp::new(cc, mock_mode, cli.desktop)))),
+        Box::new(move |cc| {
+            Ok(Box::new(app::AnniApp::new_with_updates(
+                cc,
+                mock_mode,
+                cli.desktop,
+                check_updates,
+                cli.fullscreen,
+            )))
+        }),
     )
     .expect("failed to start eframe");
 }

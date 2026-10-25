@@ -20,17 +20,30 @@ pub fn subject(code: &str) -> &str {
         ("HÁMA", "Personal development"),
         ("HLSE", "Health & fitness"),
         ("FORR", "Programming"),
+        ("FJÁR", "Hagfræði"),
+        ("FJAR", "Hagfræði"),
+        ("HMNM", "Homework"),
+        ("HMN", "Homework"),
     ] {
         if code.starts_with(prefix) {
             return name;
         }
     }
-    "Course"
+    if code.trim().is_empty() || code == "—" { "Unnamed course" } else { code }
+}
+
+#[cfg(test)]
+#[test]
+fn unknown_subjects_keep_their_course_code() {
+    assert_eq!(subject("LÍFF2VL05"), "LÍFF2VL05");
+    assert_eq!(subject("ENSK2HF05"), "English");
+    assert_eq!(subject(""), "Unnamed course");
 }
 
 pub fn modules(state: &AppState) -> Vec<AssignmentModule> {
     let mut modules = state.assignments.clone();
     for lesson in &state.timetable {
+        if !lesson.is_lesson() { continue; }
         let code = lesson.course_code();
         if code != "—" && !modules.iter().any(|m| m.module_str() == code) {
             modules.push(AssignmentModule {
@@ -179,6 +192,30 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
             ui.label(RichText::new(note).size(13.0).color(WARNING));
         }
         ui.add_space(8.0);
+        for (name, category) in grades::categories(module) {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(name).size(13.0).strong());
+                let average = category
+                    .average
+                    .map(grades::average_text)
+                    .unwrap_or_else(|| "—".into());
+                ui.label(
+                    RichText::new(format!("{average} / 10"))
+                        .size(13.0)
+                        .color(ACCENT),
+                );
+                ui.label(
+                    RichText::new(format!(
+                        "{}% listed · {}% graded",
+                        locale::decimal(category.listed_weight, 1),
+                        locale::decimal(category.graded_weight, 1)
+                    ))
+                    .size(12.0)
+                    .color(TEXT_SECONDARY),
+                );
+            });
+        }
+        ui.add_space(4.0);
         egui::CollapsingHeader::new(format!(
             "Assignments & exams ({})",
             locale::number(module.assignments.len())

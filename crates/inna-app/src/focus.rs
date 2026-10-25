@@ -51,7 +51,7 @@ impl FocusTimer {
     }
 
     pub fn preset(&mut self, minutes: u32, is_break: bool) {
-        self.minutes = minutes;
+        self.minutes = minutes.clamp(1, 240);
         self.is_break = is_break;
         self.reset();
     }
@@ -114,5 +114,25 @@ mod tests {
         timer.preset(5, true);
         assert_eq!(timer.clock(Instant::now()), "05:00");
         assert!(timer.is_break);
+    }
+
+    #[test]
+    fn custom_duration_is_bounded_and_survives_pause_reset_and_restart() {
+        let mut timer = FocusTimer::default();
+        let now = Instant::now();
+        timer.preset(37, false);
+        timer.toggle(now);
+        timer.toggle(now + Duration::from_secs(60));
+        assert_eq!(timer.clock(now), "36:00");
+        timer.reset();
+        assert_eq!(timer.clock(now), "37:00");
+        timer.toggle(now);
+        assert!(timer.tick(now + Duration::from_secs(37 * 60)));
+        timer.toggle(now);
+        assert_eq!(timer.clock(now), "37:00");
+        timer.preset(0, false);
+        assert_eq!(timer.minutes, 1);
+        timer.preset(u32::MAX, true);
+        assert_eq!(timer.minutes, 240);
     }
 }

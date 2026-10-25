@@ -8,6 +8,7 @@ use egui::{RichText, Ui};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionAction {
     None,
+    ReconnectBrowser,
     ReconnectLocal,
     ReconnectPhone,
     Disconnect,
@@ -49,10 +50,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
             | ConnectionState::Offline
             | ConnectionState::Error(_) => {
                 ui.horizontal_wrapped(|ui| {
+                    if ui.add_enabled(!state.refreshing, primary_button("Connect in browser")).clicked() {
+                        action = ConnectionAction::ReconnectBrowser;
+                    }
                     if ui
                         .add_enabled(
                             !state.refreshing,
-                            egui::Button::new("Connect on this device"),
+                            egui::Button::new("Use separate sign-in window"),
                         )
                         .clicked()
                     {
@@ -68,6 +72,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
                         action = ConnectionAction::ReconnectPhone;
                     }
                 });
+                ui.label(RichText::new("Connect in browser uses your usual Chrome or Edge login with a one-time Anni Connect extension setup.").size(13.0).color(TEXT_SECONDARY));
             }
             ConnectionState::Connected | ConnectionState::MockMode => {
                 if ui

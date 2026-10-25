@@ -47,6 +47,34 @@ pub struct TimetableEntry {
 }
 
 impl TimetableEntry {
+    /// INNA mixes lessons and school-calendar events in the same response.
+    pub fn is_lesson(&self) -> bool {
+        if self.all_day == Some(true) {
+            return false;
+        }
+        let title = self.course_code().trim().to_lowercase();
+        ![
+            "vetrarfrí",
+            "haustfrí",
+            "jólafrí",
+            "páskafrí",
+            "sumarfrí",
+            "skólafrí",
+            "winter break",
+            "autumn break",
+            "christmas break",
+            "easter break",
+            "school holiday",
+        ]
+        .iter()
+        .any(|name| {
+            title == *name
+                || title
+                    .strip_prefix(name)
+                    .is_some_and(|suffix| suffix.starts_with([' ', '-', ':', '–']))
+        })
+    }
+
     pub fn course_code(&self) -> &str {
         self.title_short.as_deref().unwrap_or("—")
     }
@@ -260,6 +288,29 @@ impl PingResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn breaks_and_all_day_events_are_not_classes() {
+        for title in [
+            "Vetrarfrí",
+            "Vetrarfrí - engin kennsla",
+            "Winter break",
+            "Jólafrí",
+        ] {
+            let entry: TimetableEntry =
+                serde_json::from_value(serde_json::json!({"titleShort": title})).unwrap();
+            assert!(!entry.is_lesson(), "{title}");
+        }
+        let event: TimetableEntry =
+            serde_json::from_value(serde_json::json!({"titleShort":"School event", "allDay":true}))
+                .unwrap();
+        assert!(!event.is_lesson());
+        for title in ["ENSK2HF05", "Winter literature", "FORR2HF05"] {
+            let entry: TimetableEntry =
+                serde_json::from_value(serde_json::json!({"titleShort":title})).unwrap();
+            assert!(entry.is_lesson());
+        }
+    }
 
     #[test]
     fn test_parse_user_fixture() {

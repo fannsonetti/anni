@@ -63,6 +63,10 @@ try {
             throw "Missing release binary: $binary"
         }
     }
+    $binaryVersion = (Get-Item -LiteralPath (Join-Path $binaryDir 'anni.exe')).VersionInfo.ProductVersion
+    if ($binaryVersion -ne $version) {
+        throw "Anni binary version '$binaryVersion' does not match package version '$version'. Rebuild before packaging."
+    }
 
     # App-local CRT DLLs keep setup per-user and avoid an elevated VC++ installer.
     # Use the redistributable files from Visual Studio, never system DLL copies.
@@ -90,10 +94,12 @@ try {
     # Microsoft documents packaging this signed Evergreen bootstrapper with apps.
     # It downloads the runtime only on machines where WebView2 is missing.
     $bootstrapper = Join-Path $installerWork 'MicrosoftEdgeWebview2Setup.exe'
-    Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $bootstrapper
+    if (-not (Test-Path -LiteralPath $bootstrapper)) {
+        Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $bootstrapper
+    }
     Assert-SignedDownload $bootstrapper 'O=Microsoft Corporation(,|$)'
 
-    & $IsccPath "/DAppVersion=$version" "/DSourceDir=$binaryDir" "/DOutputDir=$outputDir" "/DBootstrapperPath=$bootstrapper" "/DRuntimeDir=$runtimeDir" (Join-Path $repoRoot 'installer\anni.iss')
+    & $IsccPath "/DAppVersion=$version" "/DSourceDir=$binaryDir" "/DOutputDir=$outputDir" "/DBootstrapperPath=$bootstrapper" "/DRuntimeDir=$runtimeDir" "/DBrowserExtensionDir=$(Join-Path $repoRoot 'browser-extension')" (Join-Path $repoRoot 'installer\anni.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
     $installer = Join-Path $outputDir "Anni-$version-windows-x64-setup.exe"
     $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()

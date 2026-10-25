@@ -69,19 +69,12 @@ pub struct GradeSummary {
     pub missing_weights: usize,
     pub non_numeric: usize,
     pub non_numeric_weighted: usize,
-    pub categories_present: bool,
     pub invalid_total: bool,
 }
 
 impl GradeSummary {
     pub fn for_module(module: &AssignmentModule) -> Self {
         let mut summary = Self::default();
-        summary.categories_present = match &module.categories {
-            Value::Null => false,
-            Value::Array(a) => !a.is_empty(),
-            Value::Object(o) => !o.is_empty(),
-            _ => true,
-        };
         let mut points = 0.0;
         for item in &module.assignments {
             let grade = numeric_grade(item.grade_str());
@@ -105,9 +98,10 @@ impl GradeSummary {
             }
         }
         summary.invalid_total = summary.listed_weight > 100.000001;
-        // Nonempty category data is not a documented flat weighting scheme. Do
-        // not invent category membership or silently substitute equal weights.
-        if summary.graded_weight > 0.0 && !summary.categories_present && !summary.invalid_total {
+        // INNA's assignment weights already describe contributions to the course.
+        // Categories group those same items; multiplying by a category again would
+        // apply the weight twice (e.g. the 40% / 60% assessment split).
+        if summary.graded_weight > 0.0 && !summary.invalid_total {
             summary.average = Some(points / summary.graded_weight);
         }
         summary
@@ -129,9 +123,7 @@ impl GradeSummary {
     }
 
     pub fn explanation(&self) -> Option<&'static str> {
-        if self.categories_present {
-            Some("Assessment uses categories. Category weights and assignment links are incomplete, so a reliable average cannot be calculated.")
-        } else if self.invalid_total {
+        if self.invalid_total {
             Some("Listed weights exceed 100%. The assessment structure needs checking before an average can be calculated.")
         } else if self.missing_weights > 0 {
             Some("Some grades have no weight. This average uses only known weights, so the result is uncertain.")
@@ -143,6 +135,30 @@ impl GradeSummary {
             None
         }
     }
+}
+
+/// Use the refreshed flat rows for grades/weights; category copies may be older.
+/// Match by INNA assignment ID so each grade is counted once in its category.
+pub fn categories(module: &AssignmentModule) -> Vec<(String, GradeSummary)> {
+    module
+        .categories
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|category| {
+            let name = category.get("name")?.as_str()?.to_owned();
+            let rows = category.get("assignments")?.as_array()?;
+            let mut group = module.clone();
+            group.categories = Value::Null;
+            group.assignments.retain(|item| {
+                item.assignment_id.as_ref().is_some_and(|id| {
+                    rows.iter()
+                        .any(|row| row.get("assignmentId").and_then(Value::as_str) == Some(id))
+                })
+            });
+            Some((name, GradeSummary::for_module(&group)))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -183,13 +199,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_weights_categories_and_invalid_totals_never_report_a_certain_pass() {
+    fn missing_weights_and_invalid_totals_never_report_a_certain_pass() {
         let s = GradeSummary::for_module(&module(serde_json::json!([{"grade":"8"}])));
         assert_eq!(s.standing(), Standing::Unknown);
         assert!(s.average.is_none());
         let mut m = module(serde_json::json!([{"grade":"8","weight":50}]));
         m.categories = serde_json::json!([{"weight":100}]);
-        assert!(GradeSummary::for_module(&m).average.is_none());
+        assert_eq!(GradeSummary::for_module(&m).average, Some(8.0));
         let s = GradeSummary::for_module(&module(
             serde_json::json!([{"grade":"8","weight":80},{"grade":"7","weight":80}]),
         ));
@@ -199,5 +215,29 @@ mod tests {
         assert!(numeric_grade("NaN").is_none());
         assert!(numeric_grade("11").is_none());
         assert_eq!(numeric_grade("75%"), Some(7.5));
+    }
+
+    #[test]
+    fn categories_use_effective_weights_once_and_ignore_ungraded_work() {
+        let mut m = module(serde_json::json!([
+            {"assignmentId":"a", "grade":"8", "weight":20},
+            {"assignmentId":"b", "grade":"6", "weight":20},
+            {"assignmentId":"c", "grade":"10", "weight":30},
+            {"assignmentId":"d", "weight":30}
+        ]));
+        m.categories = serde_json::json!([
+            {"name":"Coursework", "weight":40, "assignments":[{"assignmentId":"a", "grade":"1"},{"assignmentId":"b"}]},
+            {"name":"Exams", "weight":60, "assignments":[{"assignmentId":"c"},{"assignmentId":"d"}]}
+        ]);
+        let s = GradeSummary::for_module(&m);
+        assert!((s.average.unwrap() - 580.0 / 70.0).abs() < 1e-9);
+        assert_eq!(s.graded_weight, 70.0);
+        assert_eq!(s.listed_weight, 100.0);
+        assert_eq!(s.counted, 3);
+        let groups = categories(&m);
+        assert_eq!(groups[0].1.average, Some(7.0));
+        assert_eq!(groups[1].1.average, Some(10.0));
+        assert_eq!(groups[0].1.listed_weight, 40.0);
+        assert_eq!(groups[1].1.listed_weight, 60.0);
     }
 }

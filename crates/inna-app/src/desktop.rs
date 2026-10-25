@@ -141,6 +141,7 @@ impl Desktop {
         match action {
             DesktopAction::None => {}
             DesktopAction::HidePlanner => {
+                crate::diagnostics::record(crate::diagnostics::Event::PlannerHidden);
                 self.planner_hidden = true;
                 ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Visible(false));
             }
@@ -153,6 +154,7 @@ impl Desktop {
                 ctx.request_repaint_of(ViewportId::ROOT);
             }
             DesktopAction::Quit => {
+                crate::diagnostics::record(crate::diagnostics::Event::Quit);
                 self.quit_requested = true;
                 self.hide_on_start = 0;
                 for id in widget_ids() {
@@ -291,7 +293,7 @@ impl Desktop {
             ui.collapsing("Clock appearance", |ui| {
                 ui.add(egui::Slider::new(&mut self.settings.clock_scale, 80..=180).suffix(" %").text("Clock size"));
                 ui.horizontal_wrapped(|ui| {
-                    ui.selectable_value(&mut self.settings.clock_style, crate::settings::ClockStyle::Reactor, "Minimal reactor");
+                    ui.selectable_value(&mut self.settings.clock_style, crate::settings::ClockStyle::Reactor, "Digital with ring");
                     ui.selectable_value(&mut self.settings.clock_style, crate::settings::ClockStyle::Digital, "Minimal digital");
                     ui.selectable_value(&mut self.settings.clock_style, crate::settings::ClockStyle::Analog, "Analog");
                 });
@@ -321,21 +323,22 @@ impl Desktop {
             ui.label(RichText::new("Changes save automatically. Clear removes the background tint; widget borders are optional. Open Anni from its shortcut to change settings.").size(13.0).color(TEXT_SECONDARY));
             if cfg!(windows) {
                 let mut startup = self.startup;
-                if ui.add_enabled(!mock, egui::Checkbox::new(&mut startup, "Open desktop widgets when I sign in to Windows")).changed() {
+                if ui.add_enabled(!mock, egui::Checkbox::new(&mut startup, "Start Anni and check for updates when I sign in to Windows")).changed() {
                     match platform::set_startup(startup) {
                         Ok(()) => { self.startup = startup; self.error = None; }
                         Err(error) => self.error = Some(error),
                     }
                 }
-                ui.label(RichText::new("Your saved tasks appear immediately. INNA refreshes when you're connected.").size(13.0).color(TEXT_SECONDARY));
+                ui.label(RichText::new("Anni checks for updates, then opens your desktop widgets. If you're offline, it uses the installed version and your saved tasks.").size(13.0).color(TEXT_SECONDARY));
             }
             if mock { ui.label(RichText::new("Demo mode · desktop preferences are temporary and startup is disabled.").size(12.0).color(WARNING)); }
-            if self.settings.enabled {
+            {
                 ui.horizontal_wrapped(|ui| {
-                    if ui.add(primary_button("Show desktop widgets")).clicked() { action = DesktopAction::HidePlanner; }
+                    let has_widgets = self.settings.enabled && (self.settings.show_schedule || self.settings.show_homework || self.settings.show_clock);
+                    if ui.add_enabled(has_widgets, primary_button("Show desktop widgets")).clicked() { action = DesktopAction::HidePlanner; }
                     if ui.button("Quit Anni").clicked() { action = DesktopAction::Quit; }
                 });
-                ui.label(RichText::new("Closing the planner leaves your widgets running. Open Anni again from its shortcut to return to the planner.").size(12.0).color(TEXT_SECONDARY));
+                ui.label(RichText::new("Closing the window quits Anni and its widgets. Use Show desktop widgets to leave them running, then open Anni from its shortcut to return.").size(12.0).color(TEXT_SECONDARY));
             }
             if let Some(error) = &self.error { ui.colored_label(WARNING, error); }
         });

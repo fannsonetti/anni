@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect your browser to Anni</title>
+<style>
+body{margin:0;background:#0f1219;color:#ebf0f7;font:16px/1.6 system-ui,sans-serif}main{max-width:680px;margin:6vh auto;padding:28px}h1{font-size:32px;line-height:1.2}p,li{color:#b9c4c8}a,button{color:#87e2c6}a.button,button{display:inline-block;padding:12px 18px;border:1px solid #87e2c6;border-radius:10px;background:#1f3434;font:inherit;cursor:pointer;text-decoration:none}code{display:block;padding:12px;background:#1a1f29;border-radius:8px;overflow-wrap:anywhere;color:#ebf0f7}details{border-top:1px solid #343c49;padding-top:20px;margin-top:28px}summary{cursor:pointer}#extension-status{color:#87e2c6}small{color:#a4b0b4}
+</style><script src="/connect.js" defer></script></head><body><main>
+<h1>Use your usual INNA login</h1>
+<p id="extension-status" role="status">Looking for the Anni browser extension…</p>
+<p>Open INNA in this browser and sign in with your usual Google account. When you're ready, click the <strong>Anni Connect</strong> extension and choose <strong>Connect this INNA account</strong>.</p>
+<a class="button" href="https://nam.inna.is/" target="_blank" rel="noopener noreferrer">Open INNA</a>
+<p id="connection-status" role="status">Waiting for you to connect. This request expires after 10 minutes.</p>
+<details id="setup"><summary>First time? Set up the extension once</summary>
+<ol><li>In Chrome, open <strong>chrome://extensions</strong>. In Edge, open <strong>edge://extensions</strong>.</li>
+<li>Enable <strong>Developer mode</strong>, choose <strong>Load unpacked</strong>, and select this folder:</li></ol>
+<code id="extension-folder">{{EXTENSION_FOLDER}}</code><p><button id="copy-folder">Copy folder path</button></p>
+<ol start="3"><li>Pin <strong>Anni Connect</strong> so it's easy to find.</li><li>Refresh this page after installing. Then open INNA and use the extension to connect.</li></ol>
+<p>Use the browser profile where you're already signed in. Keep the extension folder at this location.</p></details>
+<p><small>The extension transfers only your INNA session to Anni on this computer when you click Connect. It doesn't access your Google login or password, and it doesn't send sign-in data to the bug-report server.</small></p>
+</main></body></html>
