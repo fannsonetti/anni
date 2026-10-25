@@ -6,7 +6,7 @@ fn remembered_profile_survives_helper_restart() {
         std::env::temp_dir().join(format!("anni-webview-profile-test-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     for phase in ["write", "read"] {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "tests::native_profile_child",
@@ -15,8 +15,20 @@ fn remembered_profile_survives_helper_restart() {
             ])
             .env("ANNI_TEST_SIGN_IN_PROFILE", &root)
             .env("ANNI_TEST_SIGN_IN_PHASE", phase)
-            .output()
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("Native WebView test timed out in {phase}; run it on an interactive Windows desktop");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let output = child.wait_with_output().unwrap();
         assert!(
             output.status.success(),
             "{phase} helper failed: {} {}",
