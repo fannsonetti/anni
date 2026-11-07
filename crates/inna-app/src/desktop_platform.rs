@@ -14,7 +14,13 @@ mod windows {
         Foundation::*,
         Graphics::{Dwm::*, Gdi::*},
         System::{Registry::*, Threading::*},
-        UI::{Accessibility::*, Controls::MARGINS, HiDpi::*, WindowsAndMessaging::*},
+        UI::{
+            Accessibility::*,
+            Controls::MARGINS,
+            HiDpi::*,
+            Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON},
+            WindowsAndMessaging::*,
+        },
     };
 
     fn wide(text: &str) -> Vec<u16> {
@@ -139,6 +145,14 @@ mod windows {
                 std::mem::size_of::<BOOL>() as u32,
             );
             SetPropW(hwnd, marker.as_ptr(), 1_usize as HANDLE);
+            let previous = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, widget_proc as *const () as isize);
+            WIDGET_PROC.store(previous, std::sync::atomic::Ordering::Relaxed);
+            if title == WORK_TITLE {
+                let first = WORK_WINDOW.swap(hwnd as isize, std::sync::atomic::Ordering::Relaxed);
+                if first == 0 {
+                    watch_cursor();
+                }
+            }
         }
         if configured && foreground_changed == 0 && IsIconic(hwnd) == 0 {
             return 1;
@@ -221,6 +235,62 @@ mod windows {
         }
     }
 
+    static WIDGET_PROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+    static WORK_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+    static CLICKABLE: std::sync::Mutex<Vec<Rect>> = std::sync::Mutex::new(Vec::new());
+
+    /// Widgets are never activated and never draw a caption, whatever Windows asks for.
+    unsafe extern "system" fn widget_proc(
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        match message {
+            WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
+            WM_NCACTIVATE => 1,
+            WM_NCPAINT => 0,
+            _ => {
+                let previous = WIDGET_PROC.load(std::sync::atomic::Ordering::Relaxed);
+                CallWindowProcW(std::mem::transmute(previous), hwnd, message, wparam, lparam)
+            }
+        }
+    }
+
+    /// Homework rows, in physical pixels from the window's corner. Clicks anywhere else
+    /// fall through to the desktop.
+    pub fn set_clickable(rows: Vec<Rect>) {
+        *CLICKABLE.lock().unwrap() = rows;
+    }
+
+    /// WS_EX_TRANSPARENT windows get no mouse messages, so the cursor has to be polled.
+    /// Same approach and interval as Hermes.
+    fn watch_cursor() {
+        std::thread::spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            let window = WORK_WINDOW.load(std::sync::atomic::Ordering::Relaxed) as HWND;
+            unsafe {
+                let (mut cursor, mut rect) = (std::mem::zeroed(), std::mem::zeroed());
+                if GetCursorPos(&mut cursor) == 0 || GetWindowRect(window, &mut rect) == 0 {
+                    continue;
+                }
+                let local = pos2((cursor.x - rect.left) as f32, (cursor.y - rect.top) as f32);
+                let clickable = CLICKABLE.lock().unwrap().iter().any(|r| r.contains(local));
+                let ex_style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+                let through = ex_style & WS_EX_TRANSPARENT as isize != 0;
+                // Don't flip mid-click, or the button-up would land on the desktop.
+                let held = !through && GetAsyncKeyState(VK_LBUTTON as i32) < 0;
+                if through == clickable && !held {
+                    SetWindowLongPtrW(
+                        window,
+                        GWL_EXSTYLE,
+                        ex_style ^ WS_EX_TRANSPARENT as isize,
+                    );
+                }
+            }
+        });
+    }
+
     static ROOT_PROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
     unsafe extern "system" fn root_proc(
@@ -250,7 +320,7 @@ mod windows {
     pub fn close_while_hidden(root: isize) {
         unsafe {
             let previous =
-                SetWindowLongPtrW(root as HWND, GWLP_WNDPROC, root_proc as usize as isize);
+                SetWindowLongPtrW(root as HWND, GWLP_WNDPROC, root_proc as *const () as isize);
             ROOT_PROC.store(previous, std::sync::atomic::Ordering::Relaxed);
         }
     }
@@ -378,6 +448,8 @@ pub fn work_area() -> Rect {
 }
 #[cfg(not(windows))]
 pub fn arrange_widgets() {}
+#[cfg(not(windows))]
+pub fn set_clickable(_: Vec<Rect>) {}
 #[cfg(not(windows))]
 pub struct ForegroundWatcher;
 #[cfg(not(windows))]

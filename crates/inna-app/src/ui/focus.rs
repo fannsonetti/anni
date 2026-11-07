@@ -47,7 +47,7 @@ fn timer(ui: &mut Ui, state: &mut AppState) {
                     "TIME FOR YOURSELF"
                 })
                 .size(11.0)
-                .strong()
+                .family(crate::ui::theme::semibold())
                 .color(if state.focus.is_break { VIOLET } else { ACCENT }),
             );
             ui.add_space(20.0);
@@ -107,7 +107,7 @@ fn timer(ui: &mut Ui, state: &mut AppState) {
                         &state.focus.task_title
                     })
                     .size(17.0)
-                    .strong(),
+                    .family(crate::ui::theme::semibold()),
                 )
                 .wrap(),
             );
@@ -154,7 +154,7 @@ fn timer(ui: &mut Ui, state: &mut AppState) {
 fn setup(ui: &mut Ui, state: &mut AppState, items: &[planner::WorkItem]) {
     card().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.label(RichText::new("Make it your session").size(19.0).strong());
+        ui.label(RichText::new("Make it your session").size(19.0).family(crate::ui::theme::semibold()));
         ui.add_space(12.0);
         let locked = state.focus.in_progress();
         ui.add_enabled_ui(!locked, |ui| {
@@ -262,7 +262,7 @@ fn completion(ui: &mut Ui, state: &mut AppState, items: &[planner::WorkItem]) {
             } else {
                 "Session complete. Time well spent."
             })
-            .strong()
+            .family(crate::ui::theme::semibold())
             .color(SUCCESS),
         );
         if !state.focus.is_break {
@@ -296,13 +296,13 @@ fn history(ui: &mut Ui, state: &AppState) {
     let minutes: u32 = sessions.iter().map(|s| s.minutes).sum();
     card().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.label(RichText::new("Today's rhythm").size(19.0).strong());
+        ui.label(RichText::new("Today's rhythm").size(19.0).family(crate::ui::theme::semibold()));
         ui.add_space(8.0);
         ui.horizontal_wrapped(|ui| {
             ui.label(
                 RichText::new(locale::number(minutes as usize))
                     .size(36.0)
-                    .strong()
+                    .family(crate::ui::theme::semibold())
                     .color(ACCENT),
             );
             ui.label(

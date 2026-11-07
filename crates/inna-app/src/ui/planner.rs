@@ -19,7 +19,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             } else {
                 "Add a personal task"
             })
-            .strong()
+            .family(crate::ui::theme::semibold())
             .size(17.0),
         );
         let title = ui.add(
@@ -219,7 +219,7 @@ pub fn work_card(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
                 state.storage_dirty = true;
             }
             ui.vertical(|ui| {
-                let title = RichText::new(&item.title).size(17.0).strong();
+                let title = RichText::new(&item.title).size(17.0).family(crate::ui::theme::semibold());
                 ui.label(if item.done {
                     title.color(TEXT_SECONDARY).strikethrough()
                 } else {

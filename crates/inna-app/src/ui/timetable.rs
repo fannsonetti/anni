@@ -48,7 +48,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     ui.label(
         RichText::new(format!("{first} – {}", locale::date(sunday)))
             .size(21.0)
-            .strong(),
+            .family(crate::ui::theme::semibold()),
     );
     ui.add_space(12.0);
     for event in state.timetable.iter().filter(|entry| !entry.is_lesson()) {
@@ -471,7 +471,7 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
     ui.label(
         RichText::new(locale::day(state.selected_date))
             .size(21.0)
-            .strong(),
+            .family(crate::ui::theme::semibold()),
     );
     let lessons = state.lessons_for_date(state.selected_date);
     let total: u32 = lessons
@@ -504,7 +504,7 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
             ui.label(
                 RichText::new("A little room in your day.")
                     .size(20.0)
-                    .strong(),
+                    .family(crate::ui::theme::semibold()),
             );
             ui.label(RichText::new("No lessons are listed for this date.").color(TEXT_SECONDARY));
             if let Some(date) = next_date {
@@ -557,7 +557,7 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
                             ui.label(
                                 RichText::new(entry.start_clock.as_deref().unwrap_or("—"))
                                     .size(21.0)
-                                    .strong()
+                                    .family(crate::ui::theme::semibold())
                                     .color(color),
                             );
                             ui.label(
@@ -572,7 +572,7 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
                             ui.label(
                                 RichText::new(super::assignments::subject(entry.course_code()))
                                     .size(20.0)
-                                    .strong(),
+                                    .family(crate::ui::theme::semibold()),
                             );
                             if current {
                                 badge(ui, "In class now", ACCENT);

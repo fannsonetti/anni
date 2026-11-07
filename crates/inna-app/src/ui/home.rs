@@ -46,7 +46,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
                 .unwrap_or_else(|| "Your day, at a glance".into()),
         )
         .size(32.0)
-        .strong(),
+        .family(crate::ui::theme::semibold()),
     );
     ui.add_space(3.0);
     let summary = if overdue > 0 {
@@ -152,7 +152,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 fn section(ui: &mut Ui, title: &str, action: &str) -> bool {
     let mut clicked = false;
     ui.horizontal(|ui| {
-        ui.label(RichText::new(title).size(17.0).strong());
+        ui.label(RichText::new(title).size(17.0).family(crate::ui::theme::semibold()));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             clicked = ui
                 .add(
@@ -166,7 +166,7 @@ fn section(ui: &mut Ui, title: &str, action: &str) -> bool {
 }
 
 fn surface() -> egui::Frame {
-    card().rounding(12.0).inner_margin(20.0).outer_margin(0.0)
+    card().inner_margin(egui::Margin::symmetric(18.0, 14.0)).outer_margin(0.0)
 }
 
 fn divider(ui: &mut Ui) {
@@ -404,7 +404,7 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
                         "YOUR NEXT CLASS"
                     })
                     .size(10.0)
-                    .strong()
+                    .family(crate::ui::theme::semibold())
                     .color(ACCENT),
                 );
             });
@@ -431,7 +431,7 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
                 ui.label(
                     RichText::new(assignments::subject(lesson.course_code()))
                         .size(23.0)
-                        .strong(),
+                        .family(crate::ui::theme::semibold()),
                 );
                 ui.label(
                     RichText::new(lesson.course_code())
@@ -500,7 +500,7 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
-            ui.label(RichText::new("The next 7 days").size(17.0).strong());
+            ui.label(RichText::new("The next 7 days").size(17.0).family(crate::ui::theme::semibold()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
                     RichText::new(locale::counted(
@@ -601,7 +601,7 @@ fn focus(ui: &mut Ui, state: &mut AppState) {
     let session_count = sessions.len();
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        ui.label(RichText::new("Focus time").size(17.0).strong());
+        ui.label(RichText::new("Focus time").size(17.0).family(crate::ui::theme::semibold()));
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(minutes.to_string()).size(32.0));

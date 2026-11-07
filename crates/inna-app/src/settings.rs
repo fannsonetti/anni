@@ -66,6 +66,13 @@ impl DesktopTheme {
         }
     }
 
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::HighContrast => "Contrast",
+            _ => self.label(),
+        }
+    }
+
     pub fn description(self) -> &'static str {
         match self {
             Self::Navy => "Sky blue accents on deep navy.",

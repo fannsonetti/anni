@@ -237,113 +237,194 @@ impl Desktop {
     }
 
     pub fn settings_ui(&mut self, ui: &mut egui::Ui, mock: bool) -> DesktopAction {
+        use crate::settings::{ClockStyle, DesktopAccent, DesktopSide, DesktopTheme};
         use ui::theme::*;
         let mut action = DesktopAction::None;
-        card().show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.label(RichText::new("Desktop").size(20.0).strong());
-            ui.label(RichText::new("Your schedule on one side, homework on the other.").color(TEXT_SECONDARY));
-            ui.add_space(10.0);
-            ui::desktop::preview(ui, &self.settings);
-            ui.add_space(10.0);
-            ui.checkbox(&mut self.settings.enabled, "Show desktop widgets");
-            ui.horizontal_wrapped(|ui| {
-                ui.checkbox(&mut self.settings.show_schedule, "Schedule");
-                ui.checkbox(&mut self.settings.show_homework, "Homework");
-                ui.checkbox(&mut self.settings.show_clock, "Clock");
-                ui.checkbox(&mut self.settings.show_progress, "Day progress bar");
-            });
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Homework position:");
-                ui.selectable_value(&mut self.settings.side, crate::settings::DesktopSide::Left, "Left");
-                ui.selectable_value(&mut self.settings.side, crate::settings::DesktopSide::Right, "Right");
-            });
-            ui.add_space(10.0);
-            ui.label(RichText::new("Theme").strong());
-            ui.horizontal_wrapped(|ui| {
-                for theme in crate::settings::DesktopTheme::ALL {
-                    let selected = self.settings.theme == theme;
-                    if ui.selectable_label(selected, RichText::new(theme.label()).color(theme.palette().accent)).clicked() {
-                        self.settings.select_theme(theme);
-                    }
-                }
-            });
-            ui.label(RichText::new(self.settings.theme.description()).size(13.0).color(TEXT_SECONDARY));
-            ui.checkbox(&mut self.settings.show_borders, "Show widget borders");
-            ui.collapsing("Colors & background", |ui| {
-                use crate::settings::DesktopAccent;
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Accent:");
-                    for (accent, label) in [(DesktopAccent::Theme, "Theme"), (DesktopAccent::Ice, "Ice"), (DesktopAccent::Mint, "Mint"), (DesktopAccent::Lavender, "Lavender"), (DesktopAccent::White, "White"), (DesktopAccent::Custom, "Custom")] {
-                        ui.selectable_value(&mut self.settings.accent, accent, label);
-                    }
-                });
-                if self.settings.accent == DesktopAccent::Custom {
-                    ui.horizontal(|ui| {
-                        ui.label("Custom accent");
-                        ui.color_edit_button_srgb(&mut self.settings.custom_accent);
-                    });
-                }
-                ui.add(egui::Slider::new(&mut self.settings.panel_opacity, 0..=80).suffix(" %").text("Background opacity"));
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.settings.panel_opacity, 0, "Clear");
-                    ui.selectable_value(&mut self.settings.panel_opacity, 12, "Subtle");
-                    ui.selectable_value(&mut self.settings.panel_opacity, 35, "Contrast");
-                });
-                ui.add(egui::Slider::new(&mut self.settings.corner_radius, 0..=24).suffix(" px").text("Corner rounding"));
-            });
-            ui.collapsing("Clock appearance", |ui| {
-                ui.add(egui::Slider::new(&mut self.settings.clock_scale, 80..=180).suffix(" %").text("Clock size"));
-                ui.horizontal_wrapped(|ui| {
-                    ui.selectable_value(&mut self.settings.clock_style, crate::settings::ClockStyle::Reactor, "Digital with ring");
-                    ui.selectable_value(&mut self.settings.clock_style, crate::settings::ClockStyle::Digital, "Minimal digital");
-                    ui.selectable_value(&mut self.settings.clock_style, crate::settings::ClockStyle::Analog, "Analog");
-                });
-                ui.checkbox(&mut self.settings.show_date, "Show date");
-                ui.checkbox(&mut self.settings.show_seconds, "Show seconds");
-            });
-            ui.collapsing("Widget size & layout", |ui| {
-                ui.add(egui::Slider::new(&mut self.settings.panel_width, 280..=480).suffix(" px").text("Width"));
-                ui.add(egui::Slider::new(&mut self.settings.panel_height, 360..=800).suffix(" px").text("Height"));
-                ui.add(egui::Slider::new(&mut self.settings.text_scale, 85..=140).suffix(" %").text("Text size"));
-                ui.add(egui::Slider::new(&mut self.settings.vertical_position, 0..=100).suffix(" %").text("Vertical position"));
-                ui.add(egui::Slider::new(&mut self.settings.row_spacing, 4..=24).suffix(" px").text("Row spacing"));
-                ui.label(RichText::new("Sizes adapt to the space available on your display.").size(12.0).color(TEXT_SECONDARY));
-            });
-            ui.collapsing("Homework contents", |ui| {
-                ui.label("Heimavinna and course assignments (Verkefni) appear by default.");
-                ui.checkbox(&mut self.settings.include_exams, "Also show exams (Próf)");
-                ui.checkbox(&mut self.settings.include_reminders, "Also show personal tasks and INNA reminders");
-                ui.checkbox(&mut self.settings.show_course_codes, "Show course codes under tasks");
-                ui.checkbox(&mut self.settings.show_deadlines, "Show task deadlines");
-                ui.label(RichText::new("Manage task checkmarks in My work. Desktop widgets only display your plan.").size(12.0).color(TEXT_SECONDARY));
-            });
-            ui.add_space(6.0);
-            if ui.button("Reset appearance").clicked() {
-                self.settings = DesktopSettings { enabled: self.settings.enabled, ..Default::default() };
-            }
-            ui.label(RichText::new("Changes save automatically. Clear removes the background tint; widget borders are optional. Open Anni from its shortcut to change settings.").size(13.0).color(TEXT_SECONDARY));
+
+        section(ui, "General", |ui| {
             if cfg!(windows) {
                 let mut startup = self.startup;
-                if ui.add_enabled(!mock, egui::Checkbox::new(&mut startup, "Start Anni and check for updates when I sign in to Windows")).changed() {
-                    match platform::set_startup(startup) {
-                        Ok(()) => { self.startup = startup; self.error = None; }
-                        Err(error) => self.error = Some(error),
+                setting_row(ui, "Start with Windows", |ui| {
+                    if ui.add_enabled(!mock, egui::Checkbox::new(&mut startup, "")).changed() {
+                        match platform::set_startup(startup) {
+                            Ok(()) => {
+                                self.startup = startup;
+                                self.error = None;
+                            }
+                            Err(error) => self.error = Some(error),
+                        }
+                    }
+                });
+            }
+            let has_widgets = self.settings.enabled
+                && (self.settings.show_schedule
+                    || self.settings.show_homework
+                    || self.settings.show_clock
+                    || self.settings.show_progress);
+            ui.horizontal_wrapped(|ui| {
+                if ui.add_enabled(has_widgets, primary_button("Show desktop widgets")).clicked() {
+                    action = DesktopAction::HidePlanner;
+                }
+                if ui.button("Quit Anni").clicked() {
+                    action = DesktopAction::Quit;
+                }
+            });
+            hint(ui, "Closing the window quits Anni and its widgets. Use Show desktop widgets to leave them running, then open Anni from its shortcut to return.");
+            if mock {
+                ui.label(RichText::new("Demo mode · preferences are temporary and startup is disabled.").size(12.0).color(WARNING));
+            }
+            if let Some(error) = &self.error {
+                ui.colored_label(WARNING, error);
+            }
+        });
+
+        let settings = &mut self.settings;
+        section(ui, "Appearance", |ui| {
+            ui.label("Theme");
+            ui.add_space(2.0);
+            ui.columns(DesktopTheme::ALL.len(), |columns| {
+                for (column, theme) in columns.iter_mut().zip(DesktopTheme::ALL) {
+                    if swatch(column, theme, settings.theme == theme) {
+                        settings.select_theme(theme);
                     }
                 }
-                ui.label(RichText::new("Anni checks for updates, then opens your desktop widgets. If you're offline, it uses the installed version and your saved tasks.").size(13.0).color(TEXT_SECONDARY));
-            }
-            if mock { ui.label(RichText::new("Demo mode · desktop preferences are temporary and startup is disabled.").size(12.0).color(WARNING)); }
-            {
-                ui.horizontal_wrapped(|ui| {
-                    let has_widgets = self.settings.enabled && (self.settings.show_schedule || self.settings.show_homework || self.settings.show_clock || self.settings.show_progress);
-                    if ui.add_enabled(has_widgets, primary_button("Show desktop widgets")).clicked() { action = DesktopAction::HidePlanner; }
-                    if ui.button("Quit Anni").clicked() { action = DesktopAction::Quit; }
+            });
+            ui.add_space(6.0);
+            setting_row(ui, "Accent", |ui| {
+                egui::ComboBox::from_id_salt("accent")
+                    .width(200.0)
+                    .selected_text(accent_label(settings.accent))
+                    .show_ui(ui, |ui| {
+                        for accent in [DesktopAccent::Theme, DesktopAccent::Ice, DesktopAccent::Mint, DesktopAccent::Lavender, DesktopAccent::White, DesktopAccent::Custom] {
+                            ui.selectable_value(&mut settings.accent, accent, accent_label(accent));
+                        }
+                    });
+            });
+            if settings.accent == DesktopAccent::Custom {
+                setting_row(ui, "Custom accent", |ui| {
+                    ui.color_edit_button_srgb(&mut settings.custom_accent);
                 });
-                ui.label(RichText::new("Closing the window quits Anni and its widgets. Use Show desktop widgets to leave them running, then open Anni from its shortcut to return.").size(12.0).color(TEXT_SECONDARY));
             }
-            if let Some(error) = &self.error { ui.colored_label(WARNING, error); }
+            setting_row(ui, "Text size", |ui| {
+                ui.add(egui::Slider::new(&mut settings.text_scale, 85..=140).suffix(" %"));
+            });
+            setting_row(ui, "Background opacity", |ui| {
+                ui.add(egui::Slider::new(&mut settings.panel_opacity, 0..=80).suffix(" %"));
+            });
+            setting_row(ui, "Corner rounding", |ui| {
+                ui.add(egui::Slider::new(&mut settings.corner_radius, 0..=24).suffix(" px"));
+            });
+            setting_check(ui, "Widget borders", &mut settings.show_borders);
         });
+
+        section(ui, "Desktop widgets", |ui| {
+            setting_check(ui, "Show desktop widgets", &mut settings.enabled);
+            setting_check(ui, "Schedule", &mut settings.show_schedule);
+            setting_check(ui, "Assignments", &mut settings.show_homework);
+            setting_check(ui, "Day progress bar", &mut settings.show_progress);
+            setting_check(ui, "Clock", &mut settings.show_clock);
+            setting_row(ui, "Assignments side", |ui| {
+                egui::ComboBox::from_id_salt("side")
+                    .width(200.0)
+                    .selected_text(if settings.side == DesktopSide::Left { "Left" } else { "Right" })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut settings.side, DesktopSide::Left, "Left");
+                        ui.selectable_value(&mut settings.side, DesktopSide::Right, "Right");
+                    });
+            });
+            setting_row(ui, "Width", |ui| {
+                ui.add(egui::Slider::new(&mut settings.panel_width, 280..=480).suffix(" px"));
+            });
+            setting_row(ui, "Height", |ui| {
+                ui.add(egui::Slider::new(&mut settings.panel_height, 360..=800).suffix(" px"));
+            });
+            setting_row(ui, "Vertical position", |ui| {
+                ui.add(egui::Slider::new(&mut settings.vertical_position, 0..=100).suffix(" %"));
+            });
+            setting_row(ui, "Row spacing", |ui| {
+                ui.add(egui::Slider::new(&mut settings.row_spacing, 4..=24).suffix(" px"));
+            });
+        });
+
+        section(ui, "Assignments", |ui| {
+            setting_check(ui, "Exams (Próf)", &mut settings.include_exams);
+            setting_check(ui, "Personal tasks and INNA reminders", &mut settings.include_reminders);
+            setting_check(ui, "Course codes", &mut settings.show_course_codes);
+            setting_check(ui, "Deadlines", &mut settings.show_deadlines);
+            hint(ui, "Click an assignment on the desktop to cross it off. It hides a day later; click it again to undo.");
+        });
+
+        section(ui, "Clock", |ui| {
+            setting_row(ui, "Style", |ui| {
+                let label = |style| match style {
+                    ClockStyle::Reactor => "Digital with ring",
+                    ClockStyle::Digital => "Minimal digital",
+                    ClockStyle::Analog => "Analog",
+                };
+                egui::ComboBox::from_id_salt("clock_style")
+                    .width(200.0)
+                    .selected_text(label(settings.clock_style))
+                    .show_ui(ui, |ui| {
+                        for style in [ClockStyle::Digital, ClockStyle::Reactor, ClockStyle::Analog] {
+                            ui.selectable_value(&mut settings.clock_style, style, label(style));
+                        }
+                    });
+            });
+            setting_row(ui, "Size", |ui| {
+                ui.add(egui::Slider::new(&mut settings.clock_scale, 80..=180).suffix(" %"));
+            });
+            setting_check(ui, "Date", &mut settings.show_date);
+            setting_check(ui, "Seconds", &mut settings.show_seconds);
+        });
+        if ui.button("Reset appearance").clicked() {
+            *settings = DesktopSettings { enabled: settings.enabled, ..Default::default() };
+        }
+        ui.add_space(12.0);
         action
     }
+}
+
+fn accent_label(accent: crate::settings::DesktopAccent) -> &'static str {
+    use crate::settings::DesktopAccent::*;
+    match accent {
+        Theme => "Theme",
+        Ice => "Ice",
+        Mint => "Mint",
+        Lavender => "Lavender",
+        White => "White",
+        Custom => "Custom",
+    }
+}
+
+/// Hermes' tiny theme preview: its background with the accent and deadline colours.
+fn swatch(ui: &mut egui::Ui, theme: crate::settings::DesktopTheme, selected: bool) -> bool {
+    use egui::{pos2, vec2, Align2, Color32, FontId, Sense, Stroke};
+    let palette = theme.palette();
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 66.0), Sense::click());
+    let p = ui.painter();
+    p.rect_filled(rect, 8.0, ui::theme::CONTROL);
+    let band = egui::Rect::from_min_size(rect.min, vec2(rect.width(), 40.0));
+    p.rect_filled(
+        band,
+        egui::Rounding { nw: 8.0, ne: 8.0, sw: 0.0, se: 0.0 },
+        palette.background,
+    );
+    let center = band.center();
+    p.circle_filled(pos2(center.x - 11.0, center.y), 6.0, palette.accent);
+    p.circle_filled(pos2(center.x + 4.0, center.y), 3.5, palette.urgent);
+    p.circle_filled(pos2(center.x + 14.0, center.y), 3.5, palette.soon);
+    p.text(
+        pos2(rect.center().x, rect.bottom() - 13.0),
+        Align2::CENTER_CENTER,
+        theme.short_label(),
+        FontId::proportional(11.0),
+        Color32::WHITE,
+    );
+    let ring = if selected { palette.accent } else { ui::theme::BORDER };
+    p.rect_stroke(rect, 8.0, Stroke::new(if selected { 2.0 } else { 1.0 }, ring));
+    response
+        .on_hover_text(theme.description())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }

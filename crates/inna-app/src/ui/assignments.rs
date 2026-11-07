@@ -105,7 +105,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             ui.label(
                 RichText::new("No courses available yet")
                     .size(20.0)
-                    .strong(),
+                    .family(crate::ui::theme::semibold()),
             );
             ui.label("Connect INNA and refresh to see your course progress.");
         });
@@ -126,7 +126,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(16.0);
     card().fill(NEXT_HIGHLIGHT).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        ui.label(RichText::new("How is progress calculated?").strong());
+        ui.label(RichText::new("How is progress calculated?").family(crate::ui::theme::semibold()));
         ui.label("Average = total grade × weight, divided by the graded weight. Ungraded work does not count as zero; work with zero weight is excluded.");
         ui.label("Flensborg's general pass mark is a final grade of 5 (45%). This view compares the unrounded average with 4.50. Progress is provisional; individual course requirements may also apply.");
         ui.horizontal_wrapped(|ui| {
@@ -146,7 +146,7 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
                 .size(14.0)
                 .color(TEXT_SECONDARY),
         );
-        ui.label(RichText::new(module.module_str()).size(22.0).strong());
+        ui.label(RichText::new(module.module_str()).size(22.0).family(crate::ui::theme::semibold()));
         ui.add_space(4.0);
         badge(ui, summary.standing().label(), tint);
         ui.add_space(8.0);
@@ -159,7 +159,7 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
                         .unwrap_or_else(|| "—".into()),
                 )
                 .size(44.0)
-                .strong()
+                .family(crate::ui::theme::semibold())
                 .color(tint),
             );
             ui.label(RichText::new("/ 10").size(18.0).color(TEXT_DIM));
@@ -194,7 +194,7 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
         ui.add_space(8.0);
         for (name, category) in grades::categories(module) {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(name).size(13.0).strong());
+                ui.label(RichText::new(name).size(13.0).family(crate::ui::theme::semibold()));
                 let average = category
                     .average
                     .map(grades::average_text)
@@ -227,7 +227,7 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
             }
             for assignment in &module.assignments {
                 ui.separator();
-                ui.label(RichText::new(assignment.name_str()).strong());
+                ui.label(RichText::new(assignment.name_str()).family(crate::ui::theme::semibold()));
                 ui.horizontal_wrapped(|ui| {
                     let grade = grades::numeric_grade(assignment.grade_str())
                         .map(|g| locale::decimal(g, 2))

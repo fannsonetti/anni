@@ -355,6 +355,17 @@ mod tests {
     }
 
     #[test]
+    fn inna_timestamps_with_milliseconds_and_a_zone_work() {
+        let timetable: Vec<TimetableEntry> = serde_json::from_value(serde_json::json!([
+            {"start":"2026-11-02T08:30:00.000Z", "end":"2026-11-02T09:30:00.000Z", "titleShort":"DANS1GR05"}
+        ]))
+        .unwrap();
+        let day = DayState::compute(&timetable, at("2026-11-02T09:00:00"));
+        assert_eq!(day.phase, Phase::InClass);
+        assert_eq!(day.footer, "Day 50% done · school ends 09:30");
+    }
+
+    #[test]
     fn countdowns_match_the_deadline_distance() {
         let now = at("2026-11-05T12:00:00");
         let label = |text| countdown(planner::parse_deadline(text).unwrap(), now);

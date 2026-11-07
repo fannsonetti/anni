@@ -18,23 +18,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
     let mut action = ConnectionAction::None;
     card().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        ui.horizontal_wrapped(|ui| {
-            super::brand::wordmark(ui, false);
-            badge(ui, "Your INNA overview", ACCENT);
-        });
-        ui.label("Anni brings your timetable, assignments, and grades together. It is an independent, unofficial app.");
-        ui.add_space(8.0);
-        ui.horizontal_wrapped(|ui| {
-            badge(ui, "Always dark", ACCENT);
-        });
-        ui.label(
-            RichText::new("A consistent dark interface, regardless of your system theme.")
-                .color(TEXT_SECONDARY),
-        );
-    });
-    card().show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        ui.label(RichText::new("INNA connection").size(20.0).strong());
+        ui.label(RichText::new("INNA connection").size(15.0).family(crate::ui::theme::semibold()));
         badge(ui, state.connection.label(), state.connection.color());
         ui.add_space(10.0);
         if let Some(user) = &state.user {
@@ -92,8 +76,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
     });
     card().show(ui,|ui| {
         ui.set_min_width(ui.available_width());
-        ui.label(RichText::new("Saved data").size(20.0).strong());
-        ui.label("Personal tasks and checkmarks are saved on this device, with a separate plan for each INNA account.");
+        ui.label(RichText::new("Saved data").size(15.0).family(crate::ui::theme::semibold()));
+        ui.label("Anni is an independent, unofficial app. Personal tasks and checkmarks are saved on this device, with a separate plan for each INNA account.");
         ui.add_space(10.0);
         if ui.add_enabled(!state.refreshing,egui::Button::new(RichText::new("Clear downloaded INNA data").color(WARNING))).clicked(){
             state.timetable.clear();state.announcements.clear();state.assignments.clear();state.homework.clear();state.todo_items.clear();state.last_sync.clear();state.sync_errors.clear();state.storage_dirty=true;
@@ -102,7 +86,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
     });
     card().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        ui.label(RichText::new("Last sync").size(20.0).strong());
+        ui.label(RichText::new("Last sync").size(15.0).family(crate::ui::theme::semibold()));
         if state.last_sync.is_empty() {
             ui.label("No data has been downloaded yet.");
         }
@@ -120,13 +104,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
                 })
                 .unwrap_or_else(|| "Unknown date".into());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(locale::resource(resource)).strong());
+                ui.label(RichText::new(locale::resource(resource)).family(crate::ui::theme::semibold()));
                 ui.label(RichText::new(date).color(TEXT_SECONDARY));
             });
         }
         if !state.sync_errors.is_empty() {
             ui.add_space(12.0);
-            ui.label(RichText::new("Refresh problems").strong().color(WARNING));
+            ui.label(RichText::new("Refresh problems").family(crate::ui::theme::semibold()).color(WARNING));
             for (resource, error) in &state.sync_errors {
                 ui.label(format!(
                     "{}: {}",

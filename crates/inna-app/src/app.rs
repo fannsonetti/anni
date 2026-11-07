@@ -599,11 +599,15 @@ impl AppData {
                     Page::Planner=>ui::planner::show(ui,&mut self.state),
                     Page::Focus=>ui::focus::show(ui,&mut self.state),
                     Page::Connection=>{
-                        theme::page_title(ui, "Settings", "Desktop widgets, your INNA connection, and local data.");
-                        let desktop_action = self.desktop.settings_ui(ui, self.mock_mode);
-                        self.desktop.handle(desktop_action, ctx, &mut self.state);
-                        crate::diagnostics::settings_ui(ui, self.mock_mode);
-                        let action=ui::connection::show(ui,&mut self.state);self.connection_action(action,ctx);
+                        // Hermes' Settings is one narrow column of cards.
+                        let inset = ((ui.available_width() - 620.0) * 0.5).max(0.0);
+                        egui::Frame::none().inner_margin(egui::Margin::symmetric(inset, 0.0)).show(ui, |ui| {
+                            theme::page_title(ui, "Settings", "Desktop widgets, your INNA connection, and local data.");
+                            let desktop_action = self.desktop.settings_ui(ui, self.mock_mode);
+                            self.desktop.handle(desktop_action, ctx, &mut self.state);
+                            let action=ui::connection::show(ui,&mut self.state);self.connection_action(action,ctx);
+                            crate::diagnostics::settings_ui(ui, self.mock_mode);
+                        });
                     }
                 }
             });

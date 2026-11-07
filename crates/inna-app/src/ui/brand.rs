@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 pub const NAME: &str = "anni";
 
 pub fn wordmark(ui: &mut Ui, compact: bool) -> egui::Response {
-    let size = if compact { 32.0 } else { 42.0 };
+    let size = if compact { 30.0 } else { 36.0 };
     ui.horizontal(|ui| {
         let texture_id = ui.id().with("anni_brand_texture");
         let texture = ui
@@ -35,8 +35,8 @@ pub fn wordmark(ui: &mut Ui, compact: bool) -> egui::Response {
         );
         ui.label(
             RichText::new(NAME)
-                .size(if compact { 26.0 } else { 33.0 })
-                .strong()
+                .size(26.0)
+                .family(crate::ui::theme::semibold())
                 .color(TEXT_PRIMARY),
         );
     })

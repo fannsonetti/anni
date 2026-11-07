@@ -7,7 +7,7 @@ use crate::{
     settings::{ClockStyle, DesktopSettings, DesktopSide},
     state::AppState,
 };
-use chrono::{NaiveDate, NaiveDateTime, Timelike, Utc};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
 use egui::{
     pos2,
     text::{LayoutJob, TextFormat},
@@ -23,7 +23,6 @@ const PT: f32 = 96.0 / 72.0;
 const SMALL: f32 = 11.0 * PT;
 const ITEM: f32 = 13.0 * PT;
 const CURRENT: f32 = 15.0 * PT;
-const PROGRESS_HEIGHT: f32 = 110.0;
 
 fn tint(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
@@ -37,19 +36,20 @@ pub struct DesktopLayout {
 }
 
 pub fn layout(screen: Rect, settings: &DesktopSettings) -> DesktopLayout {
+    // Hermes' default placement: the middle half of the screen, starting 82% of the way down.
     let progress = Rect::from_min_size(
         pos2(
-            screen.center().x - (screen.width() - 40.0).min(960.0) * 0.5,
-            screen.bottom() - PROGRESS_HEIGHT - 12.0,
+            screen.left() + screen.width() * 0.25,
+            screen.top() + screen.height() * 0.82,
         ),
-        vec2((screen.width() - 40.0).min(960.0), PROGRESS_HEIGHT),
+        vec2(screen.width() * 0.5, (screen.height() * 0.1).max(90.0)),
     );
     // Everything else stays clear of the bar.
     let mut area = screen;
     if settings.show_progress {
         area.max.y = progress.top();
     }
-    let margin = (area.width() * 0.035).clamp(20.0, 64.0);
+    let margin = (area.width() * 0.07).clamp(20.0, 180.0);
     let size = vec2(
         (settings.panel_width as f32).min(((area.width() - margin * 2.0 - 24.0) / 2.0).max(160.0)),
         (settings.panel_height as f32).min(area.height() - 40.0),
@@ -130,7 +130,8 @@ pub fn show(ctx: &egui::Context, shared: std::sync::Arc<std::sync::Mutex<crate::
     if settings.show_homework {
         ctx.show_viewport_deferred(
             ViewportId::from_hash_of("desktop_work"),
-            viewport(platform::WORK_TITLE, geometry.work),
+            // Windows reopens clicks over rows; see `platform::set_clickable`.
+            viewport(platform::WORK_TITLE, geometry.work).with_mouse_passthrough(cfg!(windows)),
             move |ctx, class| {
                 if class == egui::ViewportClass::Embedded {
                     return;
@@ -152,7 +153,7 @@ pub fn show(ctx: &egui::Context, shared: std::sync::Arc<std::sync::Mutex<crate::
     if settings.show_schedule {
         ctx.show_viewport_deferred(
             ViewportId::from_hash_of("desktop_schedule"),
-            viewport(platform::SCHEDULE_TITLE, geometry.schedule),
+            viewport(platform::SCHEDULE_TITLE, geometry.schedule).with_mouse_passthrough(true),
             move |ctx, class| {
                 if class == egui::ViewportClass::Embedded {
                     return;
@@ -365,6 +366,8 @@ struct WorkRow {
     title: Arc<Galley>,
     details: Option<Arc<Galley>>,
     color: Color32,
+    opacity: f32,
+    done: bool,
     height: f32,
 }
 
@@ -379,6 +382,11 @@ fn work_row(
     let scale = text_scale(settings);
     let palette = settings.theme.palette();
     let small = FontId::proportional(SMALL * scale);
+    // Ticked rows fade to 35% with a strikethrough, as in Hermes.
+    let ticked =
+        ui.ctx()
+            .animate_bool_with_time(egui::Id::new(("ticked", &item.key)), item.done, 0.6);
+    let opacity = 1.0 - 0.65 * ticked;
     let days = item.deadline.map(|d| (d.at.date() - now.date()).num_days());
     let color = match days {
         _ if item.overdue(now) => palette.urgent,
@@ -386,14 +394,16 @@ fn work_row(
         Some(1) => palette.soon,
         _ => palette.muted,
     };
+    let color = color.gamma_multiply(opacity);
+    let text = palette.text.gamma_multiply(opacity);
     let mut title = job(width, right);
     title.append(
         &item.title,
         0.0,
-        plain(FontId::proportional(ITEM * scale), palette.text),
+        plain(FontId::proportional(ITEM * scale), text),
     );
     let mut details = job(width, right);
-    let dim = palette.text.gamma_multiply(0.7);
+    let dim = text.gamma_multiply(0.7);
     let mut course = String::new();
     if settings.show_course_codes {
         course.clone_from(&item.course);
@@ -417,11 +427,7 @@ fn work_row(
     };
     if !due.is_empty() {
         if !course.is_empty() {
-            details.append(
-                " · ",
-                0.0,
-                plain(small.clone(), palette.text.gamma_multiply(0.5)),
-            );
+            details.append(" · ", 0.0, plain(small.clone(), text.gamma_multiply(0.5)));
         }
         details.append(&due, 0.0, plain(small, color));
     }
@@ -434,13 +440,15 @@ fn work_row(
         title,
         details,
         color,
+        opacity,
+        done: item.done,
         height,
     }
 }
 
 fn work_content(
     ctx: &egui::Context,
-    state: &AppState,
+    state: &mut AppState,
     settings: &DesktopSettings,
 ) -> DesktopAction {
     let mut action = DesktopAction::None;
@@ -455,8 +463,8 @@ fn work_content(
             let scale = text_scale(settings);
             let palette = settings.theme.palette();
             let right = settings.side == DesktopSide::Right;
-            let items = homework_items(state, settings);
             let now = Utc::now().naive_utc();
+            let items = homework_items(state, settings, now);
             let dot_space = 20.0 * scale;
             let width = (body.width() - dot_space - 16.0).max(40.0);
             let rows: Vec<_> = items
@@ -471,6 +479,8 @@ fn work_content(
             };
             let height =
                 heading_height + empty_height + rows.iter().map(|row| row.height).sum::<f32>();
+            let mut clickable = Vec::new();
+            let mut clicked = None;
             list(ui, body, "desktop_work_list", height, |ui| {
                 let (rect, _) = ui.allocate_exact_size(
                     vec2(ui.available_width(), heading_height),
@@ -505,47 +515,110 @@ fn work_content(
                         palette.text.gamma_multiply(0.7),
                     );
                 }
-                for row in &rows {
+                for (index, row) in rows.iter().enumerate() {
                     let (rect, _) = ui.allocate_exact_size(
                         vec2(ui.available_width(), row.height),
                         Sense::hover(),
                     );
                     let x = edge(rect) + inward * dot_space;
                     let top = rect.top() + settings.row_spacing as f32 * 0.25;
-                    shadowed(ui.painter(), pos2(x, top), &row.title, 1.0);
+                    shadowed(ui.painter(), pos2(x, top), &row.title, row.opacity);
+                    if row.done {
+                        // Drawn here: a formatted strikethrough would get the shadow's passes too.
+                        for line in &row.title.rows {
+                            let y = top + line.rect.center().y;
+                            ui.painter().hline(
+                                x + line.rect.left()..=x + line.rect.right(),
+                                y,
+                                Stroke::new(1.0, Color32::WHITE.gamma_multiply(row.opacity)),
+                            );
+                        }
+                    }
                     if let Some(details) = &row.details {
                         let below = top + row.title.size().y;
-                        shadowed(ui.painter(), pos2(x, below), details, 1.0);
+                        shadowed(ui.painter(), pos2(x, below), details, row.opacity);
                     }
+                    // Only the row's own text and dot catch clicks, as in Hermes.
+                    let text_width = row
+                        .details
+                        .as_ref()
+                        .map_or(0.0, |d| d.size().x)
+                        .max(row.title.size().x)
+                        + dot_space;
+                    let mut hit = rect;
+                    if right {
+                        hit.min.x = hit.max.x - text_width;
+                    } else {
+                        hit.max.x = hit.min.x + text_width;
+                    }
+                    let response = ui
+                        .interact(hit, ui.id().with(index), Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if response.clicked() {
+                        clicked = Some(index);
+                    }
+                    clickable.push(hit.intersect(ui.clip_rect()));
                     dot(
                         ui.painter(),
                         pos2(edge(rect) + inward * 6.0, rect.center().y),
                         4.0 * scale,
                         row.color,
-                        1.0,
+                        row.opacity,
                     );
                 }
             });
+            let pixels = ui.ctx().pixels_per_point();
+            platform::set_clickable(
+                clickable
+                    .into_iter()
+                    .map(|rect| Rect::from_min_max(rect.min * pixels, rect.max * pixels))
+                    .collect(),
+            );
+            if let Some(index) = clicked {
+                let item = &items[index];
+                item.set_done(&mut state.planner, !item.done);
+                state.storage_dirty = true;
+            }
         });
     action
 }
 
-pub fn open_work(state: &AppState) -> Vec<WorkItem> {
+#[cfg(test)]
+fn open_work(state: &AppState) -> Vec<WorkItem> {
     planner::work_items(state)
         .into_iter()
         .filter(|item| !item.done)
         .collect()
 }
 
-fn homework_items(state: &AppState, settings: &DesktopSettings) -> Vec<WorkItem> {
-    open_work(state)
+/// Open work, plus work ticked off in the last day so a slip can be undone.
+fn homework_items(
+    state: &AppState,
+    settings: &DesktopSettings,
+    now: NaiveDateTime,
+) -> Vec<WorkItem> {
+    let mut items = planner::work_items(state)
         .into_iter()
+        .filter(|item| {
+            let ticked_at = state.planner.done_at.get(&item.key);
+            !item.done
+                || (!item.source_done && ticked_at.is_some_and(|at| now - *at < Duration::days(1)))
+        })
         .filter(|item| match item.kind {
             WorkKind::Assignment | WorkKind::Homework => true,
             WorkKind::Exam => settings.include_exams,
             WorkKind::Personal | WorkKind::InnaTask => settings.include_reminders,
         })
-        .collect()
+        .collect::<Vec<_>>();
+    // Ticked rows stay where they are, so a second click undoes the same one.
+    items.sort_by_cached_key(|item| {
+        (
+            item.deadline.is_none(),
+            item.deadline.map(|d| d.at),
+            crate::locale::sort_key(&item.title),
+        )
+    });
+    items
 }
 
 /// Select the current school day while lessons remain, then the next cached day.
@@ -905,7 +978,7 @@ fn paint_segments(
     let total: f32 = state.segments.iter().map(seconds).sum();
     let available = (bar.width() - GAP * (count - 1.0)).max(0.0);
     let mut x = bar.left();
-    for segment in &state.segments {
+    for (index, segment) in state.segments.iter().enumerate() {
         let width = available * seconds(segment) / total;
         // Breaks are a thinner, softer line between the class segments.
         let height = if segment.is_break {
@@ -924,9 +997,15 @@ fn paint_segments(
             2.0,
             Color32::from_white_alpha(0x40).gamma_multiply(opacity),
         );
-        let fill = segment.fill(now);
+        // The fill glides to its new length over 800 ms on every tick, as in Hermes.
+        let target = segment.fill(now);
+        let fill = p.ctx().animate_value_with_time(
+            egui::Id::new(("day_fill", shadow, index)),
+            target,
+            0.8,
+        );
         if fill > 0.0 {
-            let color = if fill >= 1.0 {
+            let color = if target >= 1.0 {
                 Color32::from_white_alpha(0xD8)
             } else {
                 accent
@@ -1091,89 +1170,6 @@ fn paint_clock(p: &Painter, rect: Rect, now: chrono::DateTime<Utc>, settings: &D
     }
 }
 
-pub fn preview(ui: &mut egui::Ui, settings: &DesktopSettings) {
-    let palette = settings.theme.palette();
-    let (rect, _) =
-        ui.allocate_exact_size(vec2(ui.available_width().min(560.0), 200.0), Sense::hover());
-    let p = ui.painter().with_clip_rect(rect);
-    p.rect_filled(rect, 12.0, Color32::from_rgb(0x16, 0x25, 0x3D));
-    p.add(Shape::convex_polygon(
-        vec![
-            rect.left_top(),
-            rect.right_top(),
-            rect.right_bottom() - vec2(100.0, 0.0),
-            rect.left_bottom() + vec2(10.0, 0.0),
-        ],
-        Color32::from_rgb(0x1E, 0x2E, 0x4A),
-        Stroke::NONE,
-    ));
-    // Scale the actual desktop geometry so the preview responds to every layout setting.
-    let area = platform::work_area();
-    let geometry = layout(area, settings);
-    let factor = (rect.width() / area.width()).min(rect.height() / area.height());
-    let offset = rect.center() - area.size() * factor * 0.5;
-    let scaled =
-        |r: Rect| Rect::from_min_size(offset + (r.min - area.min) * factor, r.size() * factor);
-    let work = scaled(geometry.work);
-    let schedule = scaled(geometry.schedule);
-    if settings.show_progress {
-        let bar = scaled(geometry.progress);
-        let line = Rect::from_center_size(bar.center(), vec2(bar.width(), 2.0));
-        let mut done = line;
-        done.set_width(line.width() * 0.45);
-        p.rect_filled(line, 1.0, Color32::from_white_alpha(0x40));
-        p.rect_filled(done, 1.0, settings.accent_color());
-    }
-    if settings.show_clock {
-        paint_panel(&p, scaled(geometry.clock), settings);
-        paint_clock(&p, scaled(geometry.clock), Utc::now(), settings);
-    }
-    for (panel, title, visible) in [
-        (schedule, "Schedule", settings.show_schedule),
-        (work, "Homework", settings.show_homework),
-    ] {
-        if !visible {
-            continue;
-        }
-        let width = panel.width();
-        paint_panel(&p, panel, settings);
-        p.text(
-            panel.min + vec2(7.0, 8.0),
-            Align2::LEFT_TOP,
-            title,
-            FontId::proportional(10.0),
-            palette.text,
-        );
-        for i in 0..3 {
-            let at = panel.min + vec2(8.0, panel.height() * (0.30 + i as f32 * 0.23));
-            if title == "Schedule" {
-                p.text(
-                    at,
-                    Align2::LEFT_TOP,
-                    ["08:30", "09:50", "10:55"][i],
-                    FontId::monospace(7.0),
-                    settings.accent_color(),
-                );
-            } else {
-                p.circle_stroke(
-                    at + vec2(3.0, 4.0),
-                    2.5,
-                    Stroke::new(0.7, tint(settings.accent_color(), 150)),
-                );
-            }
-            let indent = if title == "Schedule" { 31.0 } else { 14.0 };
-            p.line_segment(
-                [at + vec2(indent, 3.0), at + vec2(width - 18.0, 3.0)],
-                Stroke::new(1.5, palette.text),
-            );
-            p.line_segment(
-                [at + vec2(indent, 11.0), at + vec2(width - 30.0, 11.0)],
-                Stroke::new(0.7, palette.muted),
-            );
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1202,7 +1198,8 @@ mod tests {
                     },
                     |ctx| {
                         let action = if homework {
-                            work_content(ctx, &state, &settings)
+                            // Row clicks are covered by the tick test below.
+                            work_content(ctx, &mut AppState::new(), &settings)
                         } else {
                             schedule_content(ctx, &state, &settings)
                         };
@@ -1276,23 +1273,82 @@ mod tests {
         state.homework = crate::mock::mock_homework();
         state.todo_items = crate::mock::mock_todo();
         state.planner.add("Personal", "", "").unwrap();
-        let mut settings = DesktopSettings::default();
-        let homework = homework_items(&state, &settings);
+        let settings = DesktopSettings::default();
+        let now = Utc::now().naive_utc();
+        let homework = homework_items(&state, &settings, now);
         assert!(homework
             .iter()
             .all(|i| matches!(i.kind, WorkKind::Assignment | WorkKind::Homework)));
         let first = homework[0].clone();
         first.set_done(&mut state.planner, true);
-        assert!(!homework_items(&state, &settings)
-            .iter()
-            .any(|i| i.key == first.key));
+        let visible = |state: &AppState, now| {
+            homework_items(state, &settings, now)
+                .iter()
+                .find(|i| i.key == first.key)
+                .map(|i| i.done)
+        };
+        // Struck through for a day, then gone; unticking brings it straight back.
+        assert_eq!(visible(&state, now), Some(true));
+        assert_eq!(visible(&state, now + Duration::hours(25)), None);
+        first.set_done(&mut state.planner, false);
+        assert_eq!(visible(&state, now), Some(false));
+        first.set_done(&mut state.planner, true);
+        state.planner.done_at.clear();
+        assert_eq!(visible(&state, now), None);
+        let mut settings = DesktopSettings::default();
         settings.include_exams = true;
         settings.include_reminders = true;
         assert_eq!(
-            homework_items(&state, &settings).len(),
+            homework_items(&state, &settings, now).len(),
             open_work(&state).len()
         );
         assert!(settings.clock_scale > 100);
+    }
+
+    #[test]
+    fn clicking_an_assignment_ticks_it_and_clicking_again_undoes_it() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::apply_theme(&ctx);
+        let mut state = AppState::new();
+        state.assignments = crate::mock::mock_assignments();
+        let settings = DesktopSettings::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, vec2(368.0, 590.0));
+        let key = homework_items(&state, &settings, Utc::now().naive_utc())[0]
+            .key
+            .clone();
+        let mut frame = |events| {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    work_content(ctx, &mut state, &settings);
+                },
+            );
+            state.planner.completed.contains(&key)
+        };
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let click = |frame: &mut dyn FnMut(Vec<egui::Event>) -> bool, pos| {
+            frame(vec![egui::Event::PointerMoved(pos)]);
+            frame(vec![button(pos, true)]);
+            frame(vec![button(pos, false)]);
+            frame(vec![])
+        };
+        frame(vec![]);
+        let row = (0..590)
+            .step_by(6)
+            .map(|y| pos2(300.0, y as f32))
+            .find(|pos| click(&mut frame, *pos))
+            .expect("a row catches the click");
+        assert!(!click(&mut frame, row), "a second click undoes the tick");
+        assert!(!click(&mut frame, pos2(40.0, 20.0)), "empty space is inert");
     }
 
     #[test]

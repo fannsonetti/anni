@@ -451,7 +451,7 @@ pub fn failure(resource: Resource, category: Failure) {
 pub fn settings_ui(ui: &mut egui::Ui, mock: bool) {
     crate::ui::theme::card().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        ui.label(egui::RichText::new("Bug reports").size(20.0).strong());
+        ui.label(egui::RichText::new("Bug reports").size(15.0).family(crate::ui::theme::semibold()));
         ui.label("Logs help find refresh failures, missing course labels, and calendar entries mistaken for classes. They include an anonymous device ID, app version, counts, and error categories. Names, grades, full schedules, passwords, and cookies are excluded.");
         if mock { ui.label("Demo mode: bug logging is disabled."); return; }
         if let Some(reporter) = REPORTER.get() {

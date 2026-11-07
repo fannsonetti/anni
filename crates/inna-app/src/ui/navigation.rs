@@ -13,7 +13,7 @@ pub fn shortcuts(ctx: &egui::Context, state: &mut AppState) {
 
 pub fn sidebar(ctx: &egui::Context, state: &mut AppState) {
     egui::SidePanel::left("navigation")
-        .exact_width(224.0)
+        .exact_width(200.0)
         .resizable(false)
         .frame(egui::Frame::none().fill(theme::NAV_BG).inner_margin(18.0))
         .show(ctx, |ui| {
@@ -21,13 +21,7 @@ pub fn sidebar(ctx: &egui::Context, state: &mut AppState) {
             if brand::wordmark(ui, false).clicked() {
                 state.navigate(Page::Home);
             }
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new("Your school day, organized")
-                    .size(13.0)
-                    .color(theme::TEXT_SECONDARY),
-            );
-            ui.add_space(26.0);
+            ui.add_space(20.0);
 
             // The footer has its own space; the menu scrolls on short desktop windows.
             let menu_height = (ui.available_height() - 106.0).max(100.0);
@@ -66,15 +60,15 @@ fn group(ui: &mut Ui, state: &mut AppState, label: &str, pages: &[Page]) {
     ui.label(
         RichText::new(label)
             .size(10.0)
-            .strong()
+            .family(crate::ui::theme::semibold())
             .color(theme::TEXT_DIM),
     );
     ui.add_space(6.0);
     for &page in pages {
-        if item(ui, page, state.selected_page == page, true).clicked() {
+        if item(ui, page, state.selected_page == page, false).clicked() {
             state.navigate(page);
         }
-        ui.add_space(3.0);
+        ui.add_space(2.0);
     }
 }
 
@@ -108,7 +102,7 @@ pub fn location(ui: &mut Ui, state: &mut AppState) {
     ui.label(
         RichText::new(state.selected_page.label())
             .size(14.0)
-            .strong(),
+            .family(crate::ui::theme::semibold()),
     );
     if state.selected_announcement.is_some() {
         ui.label(
@@ -133,7 +127,7 @@ pub fn compact_bar(ctx: &egui::Context, state: &mut AppState) {
                     if column
                         .add_sized(
                             [column.available_width(), 46.0],
-                            egui::Button::new(RichText::new(page.label()).strong().color(
+                            egui::Button::new(RichText::new(page.label()).family(crate::ui::theme::semibold()).color(
                                 if selected {
                                     theme::ACCENT
                                 } else {
@@ -190,7 +184,7 @@ pub fn compact_bar(ctx: &egui::Context, state: &mut AppState) {
 
 fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), if description { 52.0 } else { 44.0 }),
+        egui::vec2(ui.available_width(), if description { 52.0 } else { 38.0 }),
         egui::Sense::click(),
     );
     response.widget_info(|| {
@@ -209,7 +203,7 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
     if selected || response.hovered() || response.has_focus() {
         ui.painter().rect_filled(
             rect,
-            9.0,
+            6.0,
             if selected {
                 theme::ACCENT_DIM
             } else {
@@ -232,7 +226,7 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
     ui.painter().text(
         egui::pos2(
             rect.left() + 44.0,
-            rect.top() + if description { 17.0 } else { 22.0 },
+            rect.top() + if description { 17.0 } else { 19.0 },
         ),
         egui::Align2::LEFT_CENTER,
         page.label(),

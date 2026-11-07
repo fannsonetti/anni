@@ -99,7 +99,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             if ann.has_opened == Some(false) {
                 badge(ui, "Unread", ACCENT);
             }
-            ui.label(RichText::new(ann.title_str()).size(21.0).strong());
+            ui.label(RichText::new(ann.title_str()).size(21.0).family(crate::ui::theme::semibold()));
             ui.label(
                 RichText::new(format!("{} · {}", ann.module_str(), ann.sender_str()))
                     .size(13.0)
@@ -129,7 +129,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             ui.label(
                 RichText::new("No matching announcements")
                     .size(20.0)
-                    .strong(),
+                    .family(crate::ui::theme::semibold()),
             );
             ui.label(
                 RichText::new("Try another search or show all announcements.")

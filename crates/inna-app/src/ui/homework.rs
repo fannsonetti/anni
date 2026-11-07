@@ -3,7 +3,7 @@ use crate::ui::theme::*;
 use egui::{RichText, Ui};
 
 pub fn show(ui: &mut Ui, state: &mut AppState) {
-    ui.label(RichText::new("Homework").size(24.0).strong());
+    ui.label(RichText::new("Homework").size(24.0).family(crate::ui::theme::semibold()));
     ui.add_space(8.0);
 
     if state.homework.is_empty() {

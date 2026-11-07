@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::state::AppState;
 
@@ -20,6 +20,8 @@ pub struct Planner {
     pub completed: HashSet<String>,
     pub next_id: u64,
     pub focus_sessions: Vec<FocusSession>,
+    /// When work was ticked: the desktop keeps it struck through for a day.
+    pub done_at: HashMap<String, NaiveDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +72,14 @@ impl Planner {
     }
 
     pub fn set_done(&mut self, key: &str, done: bool) {
+        let now = chrono::Utc::now().naive_utc();
+        self.done_at
+            .retain(|_, at| now - *at < chrono::Duration::days(2));
+        if done {
+            self.done_at.insert(key.into(), now);
+        } else {
+            self.done_at.remove(key);
+        }
         if let Some(id) = key
             .strip_prefix("personal:")
             .and_then(|s| s.parse::<u64>().ok())
