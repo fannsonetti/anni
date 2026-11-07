@@ -1,22 +1,23 @@
 use egui::{Color32, FontId, Rounding, Stroke, TextStyle, Visuals};
 
-pub const BG_DARK: Color32 = Color32::from_rgb(15, 18, 25);
-pub const PANEL_BG: Color32 = Color32::from_rgb(23, 28, 37);
-pub const CARD_BG: Color32 = Color32::from_rgb(26, 31, 41);
-pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(235, 240, 247);
-pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(164, 176, 180);
-pub const TEXT_DIM: Color32 = Color32::from_rgb(137, 150, 170);
-pub const ACCENT: Color32 = Color32::from_rgb(135, 226, 198);
-pub const ACCENT_TEXT: Color32 = Color32::from_rgb(12, 39, 33);
-pub const ACCENT_DIM: Color32 = Color32::from_rgb(31, 52, 52);
-pub const VIOLET: Color32 = Color32::from_rgb(180, 165, 250);
-pub const WARNING: Color32 = Color32::from_rgb(245, 195, 113);
-pub const ERROR_RED: Color32 = Color32::from_rgb(251, 144, 156);
-pub const SUCCESS: Color32 = ACCENT;
-pub const NOW_HIGHLIGHT: Color32 = Color32::from_rgb(22, 46, 41);
-pub const NEXT_HIGHLIGHT: Color32 = Color32::from_rgb(28, 35, 51);
-pub const BORDER: Color32 = Color32::from_rgb(43, 51, 65);
-pub const NAV_BG: Color32 = Color32::from_rgb(19, 23, 31);
+// Hermes' Navy theme (Core/Themes.cs).
+pub const BG_DARK: Color32 = Color32::from_rgb(0x0E, 0x1A, 0x2E);
+pub const PANEL_BG: Color32 = Color32::from_rgb(0x12, 0x20, 0x36);
+pub const CARD_BG: Color32 = Color32::from_rgb(0x16, 0x25, 0x3D);
+pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(239, 246, 255);
+pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(170, 184, 204);
+pub const TEXT_DIM: Color32 = Color32::from_rgb(137, 152, 173);
+pub const ACCENT: Color32 = Color32::from_rgb(0x7D, 0xB8, 0xFF);
+pub const ACCENT_TEXT: Color32 = Color32::from_rgb(0x0E, 0x1A, 0x2E);
+pub const ACCENT_DIM: Color32 = Color32::from_rgb(0x1E, 0x2E, 0x4A);
+pub const VIOLET: Color32 = Color32::from_rgb(0xC9, 0xA2, 0xFF);
+pub const WARNING: Color32 = Color32::from_rgb(0xFF, 0xA9, 0x4D);
+pub const ERROR_RED: Color32 = Color32::from_rgb(0xFF, 0x6B, 0x6B);
+pub const SUCCESS: Color32 = Color32::from_rgb(0x7B, 0xE0, 0xA6);
+pub const NOW_HIGHLIGHT: Color32 = Color32::from_rgb(0x1B, 0x33, 0x55);
+pub const NEXT_HIGHLIGHT: Color32 = Color32::from_rgb(0x1A, 0x2A, 0x45);
+pub const BORDER: Color32 = Color32::from_rgb(0x22, 0x38, 0x5A);
+pub const NAV_BG: Color32 = Color32::from_rgb(0x0B, 0x15, 0x26);
 
 pub fn primary_button(text: &str) -> egui::Button<'_> {
     egui::Button::new(egui::RichText::new(text).strong().color(ACCENT_TEXT))
@@ -75,6 +76,17 @@ pub fn apply_theme(ctx: &egui::Context) {
             .insert(0, "segoe".into());
     }
     let mut clock_fonts = fonts.families[&egui::FontFamily::Proportional].clone();
+    let mut strong_fonts = clock_fonts.clone();
+    #[cfg(windows)]
+    if let Ok(data) = std::fs::read("C:/Windows/Fonts/seguisb.ttf") {
+        fonts
+            .font_data
+            .insert("segoe_semibold".into(), egui::FontData::from_owned(data));
+        strong_fonts.insert(0, "segoe_semibold".into());
+    }
+    fonts
+        .families
+        .insert(egui::FontFamily::Name("desktop_strong".into()), strong_fonts);
     #[cfg(windows)]
     if let Ok(data) = std::fs::read("C:/Windows/Fonts/segoeuil.ttf") {
         fonts

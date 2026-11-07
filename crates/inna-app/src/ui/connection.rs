@@ -60,7 +60,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
                         action = ConnectionAction::ReconnectLocal;
                     }
                 });
-                ui.label(RichText::new("Sign in once in Anni's window using Google or your usual INNA method. This computer remembers your sign-in for next time, until the provider asks you to sign in again.").size(13.0).color(TEXT_SECONDARY));
+                ui.label(RichText::new("Sign in once using Google or your usual INNA method. On startup Anni reuses your session, or tries your remembered Google sign-in in the background. Connect here if your account needs verification.").size(13.0).color(TEXT_SECONDARY));
                 ui.collapsing("Other sign-in options", |ui| {
                     if ui
                         .add_enabled(

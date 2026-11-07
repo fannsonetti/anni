@@ -20,6 +20,9 @@ struct Cli {
     /// Phone QR login over LAN (for devices that cannot open a browser)
     #[arg(long)]
     phone: bool,
+    /// Reuse the remembered login without displaying a window; stop after 40 seconds.
+    #[arg(long, conflicts_with = "phone")]
+    silent: bool,
 }
 
 fn main() {
@@ -35,7 +38,7 @@ fn main() {
     }
 
     tracing::info!("starting local WebView authentication");
-    match run_local_login() {
+    match run_local_login(cli.silent) {
         Ok(session) => {
             // All WebViews and their contexts have closed before the parent receives the session.
             println!(
@@ -50,13 +53,15 @@ fn main() {
     }
 }
 
-fn run_local_login() -> Result<StoredSession, String> {
+fn run_local_login(silent: bool) -> Result<StoredSession, String> {
     let profile = inna_core::auth_profile::prepare().map_err(|_| "Could not open the remembered sign-in profile. Close other Anni sign-in windows and try again.".to_string())?;
     let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
 
     let window = WindowBuilder::new()
         .with_title("anni · Sign in to INNA")
         .with_inner_size(tao::dpi::LogicalSize::new(1024.0, 700.0))
+        .with_visible(!silent)
+        .with_focused(!silent)
         .build(&event_loop)
         .map_err(|_| "Could not open the sign-in window.".to_string())?;
 
@@ -91,10 +96,17 @@ fn run_local_login() -> Result<StoredSession, String> {
     );
 
     let mut web_context = WebContext::new(Some(profile));
+    let remembered_login_script = include_str!("remembered_login.js")
+        .replace("__ANNI_SILENT__", if silent { "true" } else { "false" });
     let webview = WebViewBuilder::new_with_web_context(&mut web_context)
         .with_incognito(false)
         .with_url(INNA_BASE_URL)
         .with_initialization_script(&poll_script)
+        .with_initialization_script(&remembered_login_script)
+        // A hidden reconnect must never launch a visible popup in the system browser.
+        .with_new_window_req_handler(move |_, _| {
+            if silent { wry::NewWindowResponse::Deny } else { wry::NewWindowResponse::Allow }
+        })
         .with_ipc_handler(move |msg| {
             let body = msg.body();
             let trusted = url::Url::parse(&msg.uri().to_string()).ok().is_some_and(|url| {
@@ -108,8 +120,20 @@ fn run_local_login() -> Result<StoredSession, String> {
         .map_err(|_| "Could not start the sign-in browser. Check WebView2 is installed and close any other Anni sign-in windows.".to_string())?;
 
     let mut result = None;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(40);
     event_loop.run_return(|event, _target, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = if silent {
+            ControlFlow::WaitUntil(deadline)
+        } else {
+            ControlFlow::Wait
+        };
+        if silent && std::time::Instant::now() >= deadline {
+            result = Some(Err(
+                "Remembered sign-in needs attention. Reconnect in Anni to continue.".into(),
+            ));
+            *control_flow = ControlFlow::Exit;
+            return;
+        }
 
         match event {
             Event::UserEvent(UserEvent::AuthCompleted) => {

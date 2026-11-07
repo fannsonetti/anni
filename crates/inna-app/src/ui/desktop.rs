@@ -1,5 +1,6 @@
 //! Borderless desktop schedule, clock, and homework sharing the live planner.
 use crate::{
+    day::{self, DayState, Phase, Segment},
     desktop::DesktopAction,
     desktop_platform as platform, locale,
     planner::{self, WorkItem, WorkKind},
@@ -8,11 +9,21 @@ use crate::{
 };
 use chrono::{NaiveDate, NaiveDateTime, Timelike, Utc};
 use egui::{
-    pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, RichText, Sense, Shape, Stroke,
-    UiBuilder, ViewportBuilder, ViewportId,
+    pos2,
+    text::{LayoutJob, TextFormat},
+    vec2, Align, Align2, Color32, FontFamily, FontId, Galley, Painter, Pos2, Rect, Sense, Shape,
+    Stroke, UiBuilder, ViewportBuilder, ViewportId,
 };
 use inna_core::models::TimetableEntry;
 use std::f32::consts::{FRAC_PI_2, TAU};
+use std::sync::Arc;
+
+/// Hermes sizes its overlay text in points.
+const PT: f32 = 96.0 / 72.0;
+const SMALL: f32 = 11.0 * PT;
+const ITEM: f32 = 13.0 * PT;
+const CURRENT: f32 = 15.0 * PT;
+const PROGRESS_HEIGHT: f32 = 110.0;
 
 fn tint(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
@@ -22,9 +33,22 @@ pub struct DesktopLayout {
     pub work: Rect,
     pub schedule: Rect,
     pub clock: Rect,
+    pub progress: Rect,
 }
 
-pub fn layout(area: Rect, settings: &DesktopSettings) -> DesktopLayout {
+pub fn layout(screen: Rect, settings: &DesktopSettings) -> DesktopLayout {
+    let progress = Rect::from_min_size(
+        pos2(
+            screen.center().x - (screen.width() - 40.0).min(960.0) * 0.5,
+            screen.bottom() - PROGRESS_HEIGHT - 12.0,
+        ),
+        vec2((screen.width() - 40.0).min(960.0), PROGRESS_HEIGHT),
+    );
+    // Everything else stays clear of the bar.
+    let mut area = screen;
+    if settings.show_progress {
+        area.max.y = progress.top();
+    }
     let margin = (area.width() * 0.035).clamp(20.0, 64.0);
     let size = vec2(
         (settings.panel_width as f32).min(((area.width() - margin * 2.0 - 24.0) / 2.0).max(160.0)),
@@ -74,6 +98,7 @@ pub fn layout(area: Rect, settings: &DesktopSettings) -> DesktopLayout {
         work,
         schedule,
         clock,
+        progress,
     }
 }
 
@@ -100,6 +125,7 @@ pub fn show(ctx: &egui::Context, shared: std::sync::Arc<std::sync::Mutex<crate::
         return;
     }
     let geometry = layout(platform::work_area(), &settings);
+    let progress_shared = shared.clone();
     let work_shared = shared.clone();
     if settings.show_homework {
         ctx.show_viewport_deferred(
@@ -178,6 +204,43 @@ pub fn show(ctx: &egui::Context, shared: std::sync::Arc<std::sync::Mutex<crate::
             },
         );
     }
+    if settings.show_progress {
+        let shared = progress_shared;
+        ctx.show_viewport_deferred(
+            ViewportId::from_hash_of("desktop_progress"),
+            viewport(platform::PROGRESS_TITLE, geometry.progress).with_mouse_passthrough(true),
+            move |ctx, class| {
+                if class == egui::ViewportClass::Embedded {
+                    return;
+                }
+                let mut app = shared.lock().unwrap();
+                app.service(ctx);
+                if !app.desktop.settings.enabled || app.desktop.quit_requested {
+                    return;
+                }
+                let settings = app.desktop.settings.clone();
+                position(ctx, layout(platform::work_area(), &settings).progress);
+                let now = Utc::now().naive_utc();
+                let state = DayState::compute(&app.state.timetable, now);
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none())
+                    .show(ctx, |ui| {
+                        paint_panel(ui.painter(), ui.max_rect().shrink(4.0), &settings);
+                        paint_progress(
+                            ui.painter(),
+                            ui.max_rect().shrink2(vec2(12.0, 8.0)),
+                            &state,
+                            now,
+                            settings.accent_color(),
+                            text_scale(&settings),
+                            true,
+                        );
+                    });
+                app.finish_update(ctx);
+                ctx.request_repaint_after(std::time::Duration::from_secs(15));
+            },
+        );
+    }
 }
 
 fn position(ctx: &egui::Context, rect: Rect) {
@@ -222,23 +285,157 @@ fn panel_content(ui: &mut egui::Ui, settings: &DesktopSettings) -> Rect {
     panel.shrink2(vec2(21.0, 16.0))
 }
 
-fn heading(ui: &mut egui::Ui, rect: Rect, title: &str, subtitle: &str, settings: &DesktopSettings) {
-    let scale = settings.text_scale as f32 / 100.0;
+fn text_scale(settings: &DesktopSettings) -> f32 {
+    settings.text_scale as f32 / 100.0
+}
+
+fn strong(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("desktop_strong".into()))
+}
+
+/// A wrapped run of text, right-aligned around x = 0 when `right` is set.
+fn job(width: f32, right: bool) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    job.wrap.max_width = width;
+    if right {
+        job.halign = Align::RIGHT;
+    }
+    job
+}
+
+fn plain(font: FontId, color: Color32) -> TextFormat {
+    TextFormat::simple(font, color)
+}
+
+/// Hermes draws straight on the wallpaper: a soft dark halo keeps white text readable.
+fn shadowed(p: &Painter, pos: Pos2, galley: &Arc<Galley>, strength: f32) {
+    for (radius, alpha, steps) in [(2.5, 16.0, 8), (1.2, 42.0, 8)] {
+        let shadow = Color32::from_black_alpha((alpha * strength) as u8);
+        for step in 0..steps {
+            let angle = step as f32 / steps as f32 * TAU;
+            p.galley_with_override_text_color(
+                pos + vec2(angle.cos(), angle.sin()) * radius,
+                galley.clone(),
+                shadow,
+            );
+        }
+    }
+    p.galley(pos, galley.clone(), Color32::WHITE);
+}
+
+fn shadowed_text(
+    p: &Painter,
+    pos: Pos2,
+    anchor: Align2,
+    text: impl ToString,
+    font: FontId,
+    color: Color32,
+) {
+    let galley = p.layout_no_wrap(text.to_string(), font, color);
+    let rect = anchor.anchor_size(pos, galley.size());
+    shadowed(p, rect.min, &galley, 1.0);
+}
+
+fn dot(p: &Painter, center: Pos2, radius: f32, color: Color32, strength: f32) {
+    p.circle_filled(
+        center,
+        radius + 2.0,
+        Color32::from_black_alpha((40.0 * strength) as u8),
+    );
+    p.circle_filled(center, radius, color);
+}
+
+/// Hermes' lists sit centered in their part; a long list starts at the top and scrolls.
+fn list(ui: &mut egui::Ui, body: Rect, id: &str, height: f32, add: impl FnOnce(&mut egui::Ui)) {
+    ui.allocate_new_ui(UiBuilder::new().max_rect(body), |ui| {
+        ui.set_clip_rect(body.intersect(ui.clip_rect()));
+        egui::ScrollArea::vertical()
+            .id_salt(id)
+            .drag_to_scroll(false)
+            .auto_shrink([false, false])
+            .max_height(body.height())
+            .show(ui, |ui| {
+                ui.add_space(((body.height() - height) * 0.5).max(0.0));
+                add(ui);
+            });
+    });
+}
+
+struct WorkRow {
+    title: Arc<Galley>,
+    details: Option<Arc<Galley>>,
+    color: Color32,
+    height: f32,
+}
+
+fn work_row(
+    ui: &egui::Ui,
+    item: &WorkItem,
+    now: NaiveDateTime,
+    settings: &DesktopSettings,
+    width: f32,
+    right: bool,
+) -> WorkRow {
+    let scale = text_scale(settings);
     let palette = settings.theme.palette();
-    ui.painter().text(
-        rect.min,
-        Align2::LEFT_TOP,
+    let small = FontId::proportional(SMALL * scale);
+    let days = item.deadline.map(|d| (d.at.date() - now.date()).num_days());
+    let color = match days {
+        _ if item.overdue(now) => palette.urgent,
+        Some(0) => palette.urgent,
+        Some(1) => palette.soon,
+        _ => palette.muted,
+    };
+    let mut title = job(width, right);
+    title.append(
+        &item.title,
+        0.0,
+        plain(FontId::proportional(ITEM * scale), palette.text),
+    );
+    let mut details = job(width, right);
+    let dim = palette.text.gamma_multiply(0.7);
+    let mut course = String::new();
+    if settings.show_course_codes {
+        course.clone_from(&item.course);
+    }
+    if item.kind == WorkKind::Exam {
+        course = [course.as_str(), "exam"]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ");
+    }
+    if !course.is_empty() {
+        details.append(&course, 0.0, plain(small.clone(), dim));
+    }
+    let due = if !settings.show_deadlines {
+        String::new()
+    } else if let Some(deadline) = item.deadline {
+        day::countdown(deadline, now)
+    } else {
+        item.due_text.clone()
+    };
+    if !due.is_empty() {
+        if !course.is_empty() {
+            details.append(
+                " · ",
+                0.0,
+                plain(small.clone(), palette.text.gamma_multiply(0.5)),
+            );
+        }
+        details.append(&due, 0.0, plain(small, color));
+    }
+    let title = ui.fonts(|fonts| fonts.layout_job(title));
+    let details = (!details.text.is_empty()).then(|| ui.fonts(|fonts| fonts.layout_job(details)));
+    let height = title.size().y
+        + details.as_ref().map_or(0.0, |d| d.size().y)
+        + settings.row_spacing as f32 * 0.5;
+    WorkRow {
         title,
-        FontId::proportional(27.0 * scale),
-        palette.text,
-    );
-    ui.painter().text(
-        rect.min + vec2(0.0, 44.0),
-        Align2::LEFT_TOP,
-        subtitle,
-        FontId::proportional(12.0 * scale),
-        palette.muted,
-    );
+        details,
+        color,
+        height,
+    }
 }
 
 fn work_content(
@@ -254,35 +451,80 @@ fn work_content(
     egui::CentralPanel::default()
         .frame(egui::Frame::none().inner_margin(0.0))
         .show(ctx, |ui| {
-            let content = panel_content(ui, settings);
+            let body = panel_content(ui, settings);
+            let scale = text_scale(settings);
+            let palette = settings.theme.palette();
+            let right = settings.side == DesktopSide::Right;
             let items = homework_items(state, settings);
-            let summary = if items.is_empty() {
-                "All caught up".into()
+            let now = Utc::now().naive_utc();
+            let dot_space = 20.0 * scale;
+            let width = (body.width() - dot_space - 16.0).max(40.0);
+            let rows: Vec<_> = items
+                .iter()
+                .map(|item| work_row(ui, item, now, settings, width, right))
+                .collect();
+            let heading_height = SMALL * scale * 1.4 + 8.0;
+            let empty_height = if rows.is_empty() {
+                ITEM * scale * 1.4
             } else {
-                locale::counted(items.len(), "task", "tasks")
+                0.0
             };
-            heading(ui, content, "Homework", &summary, settings);
-            let body = Rect::from_min_max(content.min + vec2(0.0, 77.0), content.max);
-            ui.allocate_new_ui(UiBuilder::new().max_rect(body), |ui| {
-                ui.set_clip_rect(body.intersect(ui.clip_rect()));
-                egui::ScrollArea::vertical()
-                    .id_salt("desktop_work_list")
-                    .drag_to_scroll(false)
-                    .auto_shrink([false, false])
-                    .max_height(body.height())
-                    .show(ui, |ui| {
-                        if items.is_empty() {
-                            ui.label(
-                                RichText::new("No unfinished tasks.")
-                                    .size(14.0)
-                                    .color(settings.theme.palette().muted),
-                            );
-                        }
-                        let now = Utc::now().naive_utc();
-                        for item in &items {
-                            work_row(ui, item, now, settings);
-                        }
-                    });
+            let height =
+                heading_height + empty_height + rows.iter().map(|row| row.height).sum::<f32>();
+            list(ui, body, "desktop_work_list", height, |ui| {
+                let (rect, _) = ui.allocate_exact_size(
+                    vec2(ui.available_width(), heading_height),
+                    Sense::hover(),
+                );
+                let edge = |rect: Rect| if right { rect.right() } else { rect.left() };
+                let inward = if right { -1.0 } else { 1.0 };
+                let anchor = if right {
+                    Align2::RIGHT_TOP
+                } else {
+                    Align2::LEFT_TOP
+                };
+                shadowed_text(
+                    ui.painter(),
+                    pos2(edge(rect) + inward * dot_space, rect.top()),
+                    anchor,
+                    "Assignments",
+                    strong(SMALL * scale),
+                    palette.text.gamma_multiply(0.75),
+                );
+                if rows.is_empty() {
+                    let (rect, _) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), empty_height),
+                        Sense::hover(),
+                    );
+                    shadowed_text(
+                        ui.painter(),
+                        pos2(edge(rect) + inward * dot_space, rect.top()),
+                        anchor,
+                        "Nothing due",
+                        FontId::proportional(ITEM * scale),
+                        palette.text.gamma_multiply(0.7),
+                    );
+                }
+                for row in &rows {
+                    let (rect, _) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), row.height),
+                        Sense::hover(),
+                    );
+                    let x = edge(rect) + inward * dot_space;
+                    let top = rect.top() + settings.row_spacing as f32 * 0.25;
+                    shadowed(ui.painter(), pos2(x, top), &row.title, 1.0);
+                    if let Some(details) = &row.details {
+                        let below = top + row.title.size().y;
+                        shadowed(ui.painter(), pos2(x, below), details, 1.0);
+                    }
+                    dot(
+                        ui.painter(),
+                        pos2(edge(rect) + inward * 6.0, rect.center().y),
+                        4.0 * scale,
+                        row.color,
+                        1.0,
+                    );
+                }
             });
         });
     action
@@ -306,69 +548,6 @@ fn homework_items(state: &AppState, settings: &DesktopSettings) -> Vec<WorkItem>
         .collect()
 }
 
-fn work_row(ui: &mut egui::Ui, item: &WorkItem, now: NaiveDateTime, settings: &DesktopSettings) {
-    let scale = settings.text_scale as f32 / 100.0;
-    let palette = settings.theme.palette();
-    let overdue = item.overdue(now);
-    let due_today = item.deadline.is_some_and(|d| d.at.date() == now.date());
-    let priority = if overdue || due_today {
-        palette.urgent
-    } else {
-        settings.accent_color()
-    };
-    egui::Frame::none()
-        .inner_margin(egui::Margin::symmetric(0.0, settings.row_spacing as f32))
-        .show(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                let (rect, _) = ui.allocate_exact_size(vec2(23.0, 28.0), Sense::hover());
-                let center = pos2(rect.center().x, rect.top() + 10.0);
-                ui.painter().circle_stroke(
-                    center,
-                    6.0,
-                    Stroke::new(1.0, priority.linear_multiply(0.6)),
-                );
-                ui.vertical(|ui| {
-                    ui.set_width(ui.available_width().max(40.0));
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(&item.title)
-                                .size(15.0 * scale)
-                                .color(palette.text),
-                        )
-                        .wrap(),
-                    );
-                    let mut details = Vec::new();
-                    if settings.show_course_codes && !item.course.is_empty() {
-                        details.push(item.course.clone());
-                    }
-                    if settings.show_deadlines
-                        && (item.deadline.is_some() || !item.due_text.is_empty())
-                    {
-                        details.push(format!(
-                            "{}{}",
-                            if overdue { "Overdue · " } else { "" },
-                            item.due_label(now.date())
-                        ));
-                    }
-                    if !details.is_empty() {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(details.join(" · ")).size(11.0 * scale).color(
-                                    if overdue || due_today {
-                                        palette.urgent
-                                    } else {
-                                        palette.muted
-                                    },
-                                ),
-                            )
-                            .wrap(),
-                        );
-                    }
-                });
-            });
-        });
-}
-
 /// Select the current school day while lessons remain, then the next cached day.
 /// Invalid dates are ignored; a lesson with no end time still appears before it starts.
 fn desktop_lessons(state: &AppState, now: NaiveDateTime) -> (NaiveDate, Vec<&TimetableEntry>) {
@@ -376,7 +555,9 @@ fn desktop_lessons(state: &AppState, now: NaiveDateTime) -> (NaiveDate, Vec<&Tim
         .timetable
         .iter()
         .filter_map(|entry| {
-            if !entry.is_lesson() { return None; }
+            if !entry.is_lesson() {
+                return None;
+            }
             let start = planner::parse_deadline(entry.start.as_deref()?)?.at;
             let end = entry
                 .end
@@ -400,6 +581,50 @@ fn desktop_lessons(state: &AppState, now: NaiveDateTime) -> (NaiveDate, Vec<&Tim
     (date, lessons)
 }
 
+struct ScheduleRow {
+    start: Option<NaiveDateTime>,
+    end: Option<NaiveDateTime>,
+    subject: String,
+    room: String,
+    is_break: bool,
+}
+
+/// One day's lessons with the listed breaks slotted in between them.
+fn schedule_rows(
+    state: &AppState,
+    date: NaiveDate,
+    lessons: &[&TimetableEntry],
+) -> Vec<ScheduleRow> {
+    let time = |text: &Option<String>| {
+        text.as_deref()
+            .and_then(planner::parse_deadline)
+            .map(|deadline| deadline.at)
+    };
+    let day: Vec<Segment> = day::lessons(&state.timetable)
+        .into_iter()
+        .filter(|lesson| lesson.start.date() == date)
+        .collect();
+    let mut rows: Vec<_> = lessons
+        .iter()
+        .map(|lesson| ScheduleRow {
+            start: time(&lesson.start),
+            end: time(&lesson.end),
+            subject: crate::ui::assignments::subject(lesson.course_code()).to_string(),
+            room: lesson.room().to_string(),
+            is_break: false,
+        })
+        .chain(day::breaks(&day).into_iter().map(|gap| ScheduleRow {
+            start: Some(gap.start),
+            end: Some(gap.end),
+            subject: gap.subject,
+            room: String::new(),
+            is_break: true,
+        }))
+        .collect();
+    rows.sort_by_key(|row| row.start);
+    rows
+}
+
 fn schedule_content(
     ctx: &egui::Context,
     state: &AppState,
@@ -412,130 +637,322 @@ fn schedule_content(
     }
     let now = Utc::now().naive_utc();
     let (date, lessons) = desktop_lessons(state, now);
+    let rows = schedule_rows(state, date, &lessons);
     egui::CentralPanel::default()
         .frame(egui::Frame::none().inner_margin(0.0))
         .show(ctx, |ui| {
-            let scale = settings.text_scale as f32 / 100.0;
+            let body = panel_content(ui, settings);
+            let scale = text_scale(settings);
             let palette = settings.theme.palette();
-            let content = panel_content(ui, settings);
-            heading(ui, content, "Schedule", &locale::day(date), settings);
-            let body = Rect::from_min_max(content.min + vec2(0.0, 77.0), content.max);
-            ui.allocate_new_ui(UiBuilder::new().max_rect(body), |ui| {
-                ui.set_clip_rect(body.intersect(ui.clip_rect()));
-                egui::ScrollArea::vertical()
-                    .id_salt("desktop_schedule_list")
-                    .drag_to_scroll(false)
-                    .auto_shrink([false, false])
-                    .max_height(body.height())
-                    .show(ui, |ui| {
-                        if lessons.is_empty() {
-                            ui.label(
-                                RichText::new("No upcoming classes.")
-                                    .size(14.0)
-                                    .color(palette.muted),
-                            );
-                        }
-                        let mut next_shown = false;
-                        for lesson in &lessons {
-                            let start = lesson
-                                .start
-                                .as_deref()
-                                .and_then(planner::parse_deadline)
-                                .map(|d| d.at);
-                            let end = lesson
-                                .end
-                                .as_deref()
-                                .and_then(planner::parse_deadline)
-                                .map(|d| d.at);
-                            let current = start.zip(end).is_some_and(|(s, e)| s <= now && now < e);
-                            let past = end.is_some_and(|end| end <= now);
-                            let next = !next_shown && start.is_some_and(|start| start > now);
-                            if next {
-                                next_shown = true;
-                            }
-                            egui::Frame::none()
-                                .inner_margin(egui::Margin::symmetric(
-                                    0.0,
-                                    settings.row_spacing as f32,
-                                ))
-                                .show(ui, |ui| {
-                                    ui.horizontal_top(|ui| {
-                                        ui.allocate_ui_with_layout(
-                                            vec2(56.0 * scale, 40.0 * scale),
-                                            egui::Layout::top_down(egui::Align::Min),
-                                            |ui| {
-                                                let start_label = start
-                                                    .map(|s| s.format("%H:%M").to_string())
-                                                    .unwrap_or_else(|| "—".into());
-                                                ui.label(
-                                                    RichText::new(start_label)
-                                                        .monospace()
-                                                        .size(14.0 * scale)
-                                                        .color(if past {
-                                                            palette.muted
-                                                        } else {
-                                                            settings.accent_color()
-                                                        }),
-                                                );
-                                                if let Some(end) = end {
-                                                    ui.label(
-                                                        RichText::new(
-                                                            end.format("%H:%M").to_string(),
-                                                        )
-                                                        .monospace()
-                                                        .size(10.0 * scale)
-                                                        .color(palette.muted),
-                                                    );
-                                                }
-                                            },
-                                        );
-                                        ui.vertical(|ui| {
-                                            ui.set_width(ui.available_width().max(40.0));
-                                            let subject = crate::ui::assignments::subject(
-                                                lesson.course_code(),
-                                            );
-                                            let title = subject;
-                                            ui.add(
-                                                egui::Label::new(
-                                                    RichText::new(title).size(15.0 * scale).color(
-                                                        if current {
-                                                            settings.accent_color()
-                                                        } else if past {
-                                                            palette.muted
-                                                        } else {
-                                                            palette.text
-                                                        },
-                                                    ),
-                                                )
-                                                .wrap(),
-                                            );
-                                            let mut details = Vec::new();
-                                            if !lesson.room().is_empty() {
-                                                details.push(format!("Room {}", lesson.room()));
-                                            }
-                                            if current {
-                                                details.push("Now".into());
-                                            } else if next {
-                                                details.push("Next".into());
-                                            }
-                                            if !details.is_empty() {
-                                                ui.add(
-                                                    egui::Label::new(
-                                                        RichText::new(details.join(" · "))
-                                                            .size(11.0 * scale)
-                                                            .color(palette.muted),
-                                                    )
-                                                    .wrap(),
-                                                );
-                                            }
-                                        });
-                                    });
-                                });
-                        }
+            let accent = settings.accent_color();
+            let time_text = |row: &ScheduleRow| {
+                let clock = |time: Option<NaiveDateTime>| {
+                    time.map_or("—".to_string(), |t| t.format("%H:%M").to_string())
+                };
+                format!("{} - {}", clock(row.start), clock(row.end))
+            };
+            let is_current = |row: &ScheduleRow| {
+                row.start
+                    .zip(row.end)
+                    .is_some_and(|(s, e)| s <= now && now < e)
+            };
+            let time_width = rows
+                .iter()
+                .map(|row| {
+                    let size = if is_current(row) && !row.is_break {
+                        CURRENT
+                    } else {
+                        ITEM
+                    };
+                    ui.fonts(|fonts| {
+                        fonts
+                            .layout_no_wrap(
+                                time_text(row),
+                                FontId::proportional(size * scale),
+                                palette.text,
+                            )
+                            .size()
+                            .x
+                    })
+                })
+                .fold(0.0, f32::max);
+            let dot_space = 20.0 * scale;
+            let time_space = time_width + 12.0 * scale;
+            let subject_width = (body.width() - dot_space - time_space - 16.0).max(40.0);
+
+            let lines: Vec<_> = rows
+                .iter()
+                .map(|row| {
+                    let current = is_current(row);
+                    let past = row.end.is_some_and(|end| end <= now);
+                    let size = match (row.is_break, current) {
+                        (true, _) => SMALL,
+                        (false, true) => CURRENT,
+                        (false, false) => ITEM,
+                    } * scale;
+                    let color = if current { accent } else { palette.text };
+                    let color = match (past, row.is_break && !current) {
+                        (true, _) => color.gamma_multiply(0.45),
+                        (false, true) => color.gamma_multiply(0.7),
+                        _ => color,
+                    };
+                    let font = if current && !row.is_break {
+                        strong(size)
+                    } else {
+                        FontId::proportional(size)
+                    };
+                    let mut subject = job(subject_width, false);
+                    subject.append(
+                        &row.subject,
+                        0.0,
+                        TextFormat {
+                            italics: row.is_break,
+                            ..plain(font, color)
+                        },
+                    );
+                    if current && !row.room.is_empty() {
+                        subject.append(
+                            &row.room,
+                            10.0,
+                            plain(
+                                FontId::proportional(SMALL * scale),
+                                palette.text.gamma_multiply(0.7),
+                            ),
+                        );
+                    }
+                    let subject = ui.fonts(|fonts| fonts.layout_job(subject));
+                    let time = ui.fonts(|fonts| {
+                        fonts.layout_no_wrap(time_text(row), FontId::proportional(size), color)
                     });
+                    let height =
+                        subject.size().y.max(time.size().y) + settings.row_spacing as f32 * 0.5;
+                    (row, subject, time, current, past, color, height)
+                })
+                .collect();
+
+            let heading = if date == now.date() {
+                "Today"
+            } else {
+                "Next school day"
+            };
+            let header_height = (SMALL * 2.8 + 12.0) * scale;
+            let updated = state
+                .last_sync
+                .get("timetable")
+                .and_then(|time| chrono::DateTime::parse_from_rfc3339(time).ok())
+                .map(|time| format!("Updated {}", time.format("%H:%M")));
+            let empty_height = if lines.is_empty() {
+                ITEM * scale * 1.4
+            } else {
+                0.0
+            };
+            let footer_height = if updated.is_some() {
+                (SMALL * 1.4 + 12.0) * scale
+            } else {
+                0.0
+            };
+            let height = header_height
+                + empty_height
+                + footer_height
+                + lines.iter().map(|line| line.6).sum::<f32>();
+            list(ui, body, "desktop_schedule_list", height, |ui| {
+                let (rect, _) = ui
+                    .allocate_exact_size(vec2(ui.available_width(), header_height), Sense::hover());
+                shadowed_text(
+                    ui.painter(),
+                    rect.min,
+                    Align2::LEFT_TOP,
+                    heading,
+                    strong(SMALL * scale),
+                    palette.text.gamma_multiply(0.75),
+                );
+                shadowed_text(
+                    ui.painter(),
+                    rect.min + vec2(0.0, SMALL * 1.4 * scale),
+                    Align2::LEFT_TOP,
+                    locale::day(date),
+                    FontId::proportional(SMALL * scale),
+                    palette.text.gamma_multiply(0.75),
+                );
+                if lines.is_empty() {
+                    let (rect, _) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), empty_height),
+                        Sense::hover(),
+                    );
+                    shadowed_text(
+                        ui.painter(),
+                        rect.min,
+                        Align2::LEFT_TOP,
+                        "No upcoming classes",
+                        FontId::proportional(ITEM * scale),
+                        palette.text.gamma_multiply(0.75),
+                    );
+                }
+                for (row, subject, time, current, past, color, height) in &lines {
+                    let (rect, _) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), *height), Sense::hover());
+                    let strength = if *past { 0.45 } else { 1.0 };
+                    let center = pos2(rect.left() + 5.0, rect.center().y);
+                    if row.is_break {
+                        ui.painter()
+                            .circle_stroke(center, 3.0 * scale, Stroke::new(1.0, *color));
+                    } else {
+                        let radius = if *current { 4.5 } else { 3.5 } * scale;
+                        dot(ui.painter(), center, radius, *color, strength);
+                    }
+                    let middle = |galley: &Arc<Galley>| rect.center().y - galley.size().y * 0.5;
+                    shadowed(
+                        ui.painter(),
+                        pos2(rect.left() + dot_space, middle(time)),
+                        time,
+                        strength,
+                    );
+                    shadowed(
+                        ui.painter(),
+                        pos2(rect.left() + dot_space + time_space, middle(subject)),
+                        subject,
+                        strength,
+                    );
+                }
+                if let Some(updated) = &updated {
+                    let (rect, _) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), footer_height),
+                        Sense::hover(),
+                    );
+                    shadowed_text(
+                        ui.painter(),
+                        rect.left_bottom(),
+                        Align2::LEFT_BOTTOM,
+                        updated,
+                        FontId::proportional(SMALL * scale),
+                        palette.text.gamma_multiply(0.45),
+                    );
+                }
             });
         });
     action
+}
+
+/// Hermes' bottom bar: what's on now, one segment per class, and how much of the day is done.
+pub fn paint_progress(
+    p: &Painter,
+    rect: Rect,
+    state: &DayState,
+    now: NaiveDateTime,
+    accent: Color32,
+    scale: f32,
+    shadow: bool,
+) {
+    let white = Color32::WHITE;
+    let item = FontId::proportional(ITEM * scale);
+    let mut headline = job(rect.width(), false);
+    headline.wrap.max_rows = 1;
+    headline.wrap.break_anywhere = true;
+    for (index, part) in state.headline.iter().enumerate() {
+        if index > 0 {
+            headline.append("  ·  ", 0.0, plain(item.clone(), white));
+        }
+        let (font, color) = match (index, state.phase) {
+            (0, Phase::InClass) => (strong(ITEM * scale), accent),
+            (0, _) => (strong(ITEM * scale), white),
+            _ => (item.clone(), white),
+        };
+        headline.append(part, 0.0, plain(font, color));
+    }
+    let headline = p.fonts(|fonts| fonts.layout_job(headline));
+    let footer = p.layout_no_wrap(
+        state.footer.clone(),
+        FontId::proportional(SMALL * scale),
+        white.gamma_multiply(0.85),
+    );
+    let bar_height = 4.0;
+    let footer_height = if state.footer.is_empty() {
+        0.0
+    } else {
+        footer.size().y + 8.0
+    };
+    let height = headline.size().y + 9.0 + bar_height + footer_height;
+    let top = rect.center().y - height * 0.5;
+    let strength = if shadow { 1.0 } else { 0.0 };
+    let centered = |galley: &Arc<Galley>| rect.center().x - galley.size().x * 0.5;
+    shadowed(p, pos2(centered(&headline), top), &headline, strength);
+    let bar = Rect::from_min_size(
+        pos2(rect.left(), top + headline.size().y + 9.0),
+        vec2(rect.width(), bar_height),
+    );
+    paint_segments(p, bar, state, now, accent, shadow);
+    if !state.footer.is_empty() {
+        shadowed(
+            p,
+            pos2(centered(&footer), bar.bottom() + 8.0),
+            &footer,
+            strength,
+        );
+    }
+}
+
+fn paint_segments(
+    p: &Painter,
+    bar: Rect,
+    state: &DayState,
+    now: NaiveDateTime,
+    accent: Color32,
+    shadow: bool,
+) {
+    const GAP: f32 = 4.0;
+    let seconds = |segment: &Segment| (segment.end - segment.start).num_seconds() as f32;
+    let count = state.segments.len() as f32;
+    let total: f32 = state.segments.iter().map(seconds).sum();
+    let available = (bar.width() - GAP * (count - 1.0)).max(0.0);
+    let mut x = bar.left();
+    for segment in &state.segments {
+        let width = available * seconds(segment) / total;
+        // Breaks are a thinner, softer line between the class segments.
+        let height = if segment.is_break {
+            bar.height() * 0.5
+        } else {
+            bar.height()
+        };
+        let opacity = if segment.is_break { 0.7 } else { 1.0 };
+        let track =
+            Rect::from_center_size(pos2(x + width * 0.5, bar.center().y), vec2(width, height));
+        if shadow {
+            p.rect_filled(track.expand(1.5), 3.0, Color32::from_black_alpha(36));
+        }
+        p.rect_filled(
+            track,
+            2.0,
+            Color32::from_white_alpha(0x40).gamma_multiply(opacity),
+        );
+        let fill = segment.fill(now);
+        if fill > 0.0 {
+            let color = if fill >= 1.0 {
+                Color32::from_white_alpha(0xD8)
+            } else {
+                accent
+            };
+            let mut done = track;
+            done.set_width(width * fill);
+            p.rect_filled(done, 2.0, color.gamma_multiply(opacity));
+        }
+        x += width + GAP;
+    }
+}
+
+/// The same bar along the bottom of the planner window.
+pub fn planner_progress(ui: &mut egui::Ui, state: &AppState) {
+    let now = Utc::now().naive_utc();
+    let day = DayState::compute(&state.timetable, now);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 66.0), Sense::hover());
+    paint_progress(
+        ui.painter(),
+        rect,
+        &day,
+        now,
+        crate::ui::theme::ACCENT,
+        0.8,
+        false,
+    );
 }
 
 fn paint_panel(p: &Painter, rect: Rect, settings: &DesktopSettings) {
@@ -630,7 +1047,8 @@ fn paint_clock(p: &Painter, rect: Rect, now: chrono::DateTime<Utc>, settings: &D
         p.circle_filled(center, 3.0 * scale, accent);
     }
     if settings.clock_style != ClockStyle::Analog {
-        p.text(
+        shadowed_text(
+            p,
             center
                 - vec2(
                     0.0,
@@ -654,7 +1072,8 @@ fn paint_clock(p: &Painter, rect: Rect, now: chrono::DateTime<Utc>, settings: &D
         );
     }
     if settings.show_date {
-        p.text(
+        shadowed_text(
+            p,
             center
                 + vec2(
                     0.0,
@@ -667,7 +1086,7 @@ fn paint_clock(p: &Painter, rect: Rect, now: chrono::DateTime<Utc>, settings: &D
             Align2::CENTER_CENTER,
             locale::day(now.date_naive()),
             FontId::proportional(13.0 * scale),
-            accent.gamma_multiply(0.8),
+            palette.text.gamma_multiply(0.85),
         );
     }
 }
@@ -677,7 +1096,7 @@ pub fn preview(ui: &mut egui::Ui, settings: &DesktopSettings) {
     let (rect, _) =
         ui.allocate_exact_size(vec2(ui.available_width().min(560.0), 200.0), Sense::hover());
     let p = ui.painter().with_clip_rect(rect);
-    p.rect_filled(rect, 12.0, Color32::from_rgb(20, 26, 31));
+    p.rect_filled(rect, 12.0, Color32::from_rgb(0x16, 0x25, 0x3D));
     p.add(Shape::convex_polygon(
         vec![
             rect.left_top(),
@@ -685,7 +1104,7 @@ pub fn preview(ui: &mut egui::Ui, settings: &DesktopSettings) {
             rect.right_bottom() - vec2(100.0, 0.0),
             rect.left_bottom() + vec2(10.0, 0.0),
         ],
-        Color32::from_rgb(30, 37, 43),
+        Color32::from_rgb(0x1E, 0x2E, 0x4A),
         Stroke::NONE,
     ));
     // Scale the actual desktop geometry so the preview responds to every layout setting.
@@ -697,6 +1116,14 @@ pub fn preview(ui: &mut egui::Ui, settings: &DesktopSettings) {
         |r: Rect| Rect::from_min_size(offset + (r.min - area.min) * factor, r.size() * factor);
     let work = scaled(geometry.work);
     let schedule = scaled(geometry.schedule);
+    if settings.show_progress {
+        let bar = scaled(geometry.progress);
+        let line = Rect::from_center_size(bar.center(), vec2(bar.width(), 2.0));
+        let mut done = line;
+        done.set_width(line.width() * 0.45);
+        p.rect_filled(line, 1.0, Color32::from_white_alpha(0x40));
+        p.rect_filled(done, 1.0, settings.accent_color());
+    }
     if settings.show_clock {
         paint_panel(&p, scaled(geometry.clock), settings);
         paint_clock(&p, scaled(geometry.clock), Utc::now(), settings);
@@ -755,6 +1182,7 @@ mod tests {
     fn widget_clicks_and_text_drags_do_not_open_pages_menus_or_select_text() {
         for homework in [true, false] {
             let ctx = egui::Context::default();
+            crate::ui::theme::apply_theme(&ctx);
             let mut state = AppState::new();
             state
                 .planner
@@ -951,7 +1379,11 @@ mod tests {
                             .abs()
                             < 0.01
                     );
-                    assert!(layout.work.height() >= 300.0);
+                    assert!(!layout.work.intersects(layout.progress));
+                    assert!(!layout.clock.intersects(layout.progress));
+                    assert!(area.contains_rect(layout.progress));
+                    assert_eq!(layout.progress.center().x, area.center().x);
+                    assert!(layout.work.height() >= 220.0);
                 }
             }
         }

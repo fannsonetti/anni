@@ -31,6 +31,12 @@ impl AnniApp {
         check_updates: bool,
         fullscreen: bool,
     ) -> Self {
+        #[cfg(windows)]
+        if let Ok(raw_window_handle::RawWindowHandle::Win32(window)) =
+            raw_window_handle::HasWindowHandle::window_handle(cc).map(|handle| handle.as_raw())
+        {
+            crate::desktop_platform::close_while_hidden(window.hwnd.get());
+        }
         let area = crate::desktop_platform::work_area();
         let default_rect = egui::Rect::from_center_size(
             area.center(),
@@ -73,6 +79,7 @@ pub struct AppData {
     last_ping: Option<Instant>,
     last_sync: Option<Instant>,
     auth_in_progress: bool,
+    background_auth_in_progress: bool,
     phone_auth_url: Option<String>,
     last_diagnostic: Option<Instant>,
 }
@@ -137,6 +144,7 @@ impl AppData {
             last_ping: None,
             last_sync: None,
             auth_in_progress: false,
+            background_auth_in_progress: false,
             phone_auth_url: None,
             last_diagnostic: None,
         }
@@ -199,6 +207,7 @@ impl AppData {
                     self.state.adopt_user(user);
                     self.state.connection = ConnectionState::Connected;
                     self.auth_in_progress = false;
+                    self.background_auth_in_progress = false;
                     self.phone_auth_url = None;
                     self.state.storage_dirty = true;
                     self.request_refresh(ctx);
@@ -209,11 +218,25 @@ impl AppData {
                     self.state.connection = ConnectionState::SessionExpired;
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
+                    if let Some(rt) = &self.runtime {
+                        rt.try_restore_sign_in(ctx.clone());
+                    }
                 }
                 RuntimeMsg::AuthNeeded => self.state.connection = ConnectionState::Starting,
+                RuntimeMsg::RestoringSignIn => {
+                    self.auth_in_progress = true;
+                    self.background_auth_in_progress = true;
+                    self.state.connection = ConnectionState::Authenticating;
+                }
+                RuntimeMsg::SignInRestoreFailed => {
+                    self.auth_in_progress = false;
+                    self.background_auth_in_progress = false;
+                    self.state.connection = ConnectionState::SessionExpired;
+                }
                 RuntimeMsg::AuthStarted => {
                     self.state.navigate(Page::Connection);
                     self.auth_in_progress = true;
+                    self.background_auth_in_progress = false;
                     self.phone_auth_url = None;
                     self.state.connection = ConnectionState::Authenticating;
                 }
@@ -540,6 +563,10 @@ impl AppData {
         if !wide {
             ui::navigation::compact_bar(ctx, &mut self.state);
         }
+        egui::TopBottomPanel::bottom("day_progress")
+            .frame(egui::Frame::none().fill(theme::NAV_BG).inner_margin(egui::Margin::symmetric(24.0, 8.0)))
+            .show_separator_line(false)
+            .show(ctx, |ui| ui::desktop::planner_progress(ui, &self.state));
         egui::CentralPanel::default().frame(egui::Frame::none().fill(theme::BG_DARK).inner_margin(if wide { 26.0 } else { 18.0 })).show(ctx,|ui| {
             if self.auth_in_progress && self.state.selected_page==Page::Connection {
                 theme::card().show(ui,|ui| {
@@ -548,6 +575,9 @@ impl AppData {
                         ui.label("Open this address on your phone:");
                         ui.label(RichText::new(url).size(24.0).color(theme::ACCENT));
                         ui.label("Choose Open INNA, sign in, and keep the page open until the connection completes.");
+                    }else if self.background_auth_in_progress {
+                        theme::page_title(ui,"Reconnecting to INNA…","Anni is trying your remembered sign-in in the background.");
+                        ui.label("If Google needs verification, use Connect to INNA after this attempt finishes.");
                     }else{
                         theme::page_title(ui,"Connecting to INNA…","Finish signing in in Anni's sign-in window.");
                         ui.label("Your sign-in is remembered on this computer. Google or INNA may occasionally ask you to verify your account again.");
@@ -749,6 +779,7 @@ mod tests {
                 last_ping: None,
                 last_sync: None,
                 auth_in_progress: false,
+                background_auth_in_progress: false,
                 phone_auth_url: None,
                 last_diagnostic: None,
             },
@@ -834,6 +865,34 @@ mod tests {
             .state
             .last_sync
             .contains_key("homework"));
+    }
+
+    #[test]
+    fn background_signin_keeps_the_current_page_and_failure_allows_manual_reconnect() {
+        let (mut app, tx) = test_app();
+        let ctx = egui::Context::default();
+        app.state.selected_page = Page::Home;
+        app.state.planner.add("Keep this plan", "", "").unwrap();
+        tx.send(RuntimeMsg::RestoringSignIn).unwrap();
+        tx.send(RuntimeMsg::SessionExpired).unwrap();
+        app.process_messages(&ctx);
+        assert!(app.auth_in_progress);
+        assert!(app.background_auth_in_progress);
+        assert_eq!(app.state.selected_page, Page::Home);
+        tx.send(RuntimeMsg::SignInRestoreFailed).unwrap();
+        app.process_messages(&ctx);
+        assert!(!app.auth_in_progress);
+        assert_eq!(app.state.connection, ConnectionState::SessionExpired);
+        assert_eq!(app.state.planner.tasks[0].title, "Keep this plan");
+        tx.send(RuntimeMsg::AuthStarted).unwrap();
+        app.process_messages(&ctx);
+        assert!(!app.background_auth_in_progress);
+        assert!(app.auth_in_progress);
+        assert_eq!(app.state.selected_page, Page::Connection);
+        tx.send(RuntimeMsg::Connected(mock::mock_user())).unwrap();
+        app.process_messages(&ctx);
+        assert!(!app.auth_in_progress);
+        assert_eq!(app.state.connection, ConnectionState::Connected);
     }
 
     #[test]

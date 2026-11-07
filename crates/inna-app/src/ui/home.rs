@@ -390,8 +390,8 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
     let lesson = current.or(next).cloned();
     let live = current.is_some();
     surface()
-        .fill(Color32::from_rgb(27, 43, 45))
-        .stroke(Stroke::new(1.0, Color32::from_rgb(49, 76, 74)))
+        .fill(NOW_HIGHLIGHT)
+        .stroke(Stroke::new(1.0, Color32::from_rgb(0x2E, 0x4A, 0x72)))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             ui.horizontal(|ui| {

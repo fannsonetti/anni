@@ -1,8 +1,9 @@
 use crate::{desktop_platform as platform, settings::DesktopSettings, ui};
 use egui::{RichText, ViewportCommand, ViewportId};
 
-pub fn widget_ids() -> [ViewportId; 3] {
-    ["desktop_work", "desktop_schedule", "desktop_clock"].map(ViewportId::from_hash_of)
+pub fn widget_ids() -> [ViewportId; 4] {
+    ["desktop_work", "desktop_schedule", "desktop_clock", "desktop_progress"]
+        .map(ViewportId::from_hash_of)
 }
 
 #[cfg(test)]
@@ -250,6 +251,7 @@ impl Desktop {
                 ui.checkbox(&mut self.settings.show_schedule, "Schedule");
                 ui.checkbox(&mut self.settings.show_homework, "Homework");
                 ui.checkbox(&mut self.settings.show_clock, "Clock");
+                ui.checkbox(&mut self.settings.show_progress, "Day progress bar");
             });
             ui.horizontal_wrapped(|ui| {
                 ui.label("Homework position:");
@@ -334,7 +336,7 @@ impl Desktop {
             if mock { ui.label(RichText::new("Demo mode · desktop preferences are temporary and startup is disabled.").size(12.0).color(WARNING)); }
             {
                 ui.horizontal_wrapped(|ui| {
-                    let has_widgets = self.settings.enabled && (self.settings.show_schedule || self.settings.show_homework || self.settings.show_clock);
+                    let has_widgets = self.settings.enabled && (self.settings.show_schedule || self.settings.show_homework || self.settings.show_clock || self.settings.show_progress);
                     if ui.add_enabled(has_widgets, primary_button("Show desktop widgets")).clicked() { action = DesktopAction::HidePlanner; }
                     if ui.button("Quit Anni").clicked() { action = DesktopAction::Quit; }
                 });

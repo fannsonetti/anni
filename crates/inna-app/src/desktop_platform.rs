@@ -4,6 +4,7 @@ use egui::{pos2, vec2, Rect};
 pub const WORK_TITLE: &str = "anni · Desktop homework";
 pub const CLOCK_TITLE: &str = "anni · Desktop clock";
 pub const SCHEDULE_TITLE: &str = "anni · Desktop schedule";
+pub const PROGRESS_TITLE: &str = "anni · Desktop day progress";
 
 #[cfg(windows)]
 mod windows {
@@ -48,7 +49,7 @@ mod windows {
         let mut title = [0u16; 128];
         let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
         let title = String::from_utf16_lossy(&title[..length.max(0) as usize]);
-        if title != WORK_TITLE && title != CLOCK_TITLE && title != SCHEDULE_TITLE {
+        if ![WORK_TITLE, CLOCK_TITLE, SCHEDULE_TITLE, PROGRESS_TITLE].contains(&title.as_str()) {
             return 1;
         }
         let marker = wide("anni-widget-configured");
@@ -217,6 +218,40 @@ mod windows {
                     UnhookWinEvent(self.0 as HWINEVENTHOOK);
                 }
             }
+        }
+    }
+
+    static ROOT_PROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+    unsafe extern "system" fn root_proc(
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        // egui only sees a close during a paint, and hidden windows never paint, so
+        // `anni --desktop` ignored WM_CLOSE from Windows, installers, and taskkill.
+        if message == WM_CLOSE && IsWindowVisible(hwnd) == 0 {
+            SetWindowPos(
+                hwnd,
+                null_mut(),
+                -32000,
+                -32000,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        }
+        let previous = ROOT_PROC.load(std::sync::atomic::Ordering::Relaxed);
+        CallWindowProcW(std::mem::transmute(previous), hwnd, message, wparam, lparam)
+    }
+
+    /// Lets the planner window close while hidden. Call once, with the root window.
+    pub fn close_while_hidden(root: isize) {
+        unsafe {
+            let previous =
+                SetWindowLongPtrW(root as HWND, GWLP_WNDPROC, root_proc as usize as isize);
+            ROOT_PROC.store(previous, std::sync::atomic::Ordering::Relaxed);
         }
     }
 

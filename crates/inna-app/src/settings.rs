@@ -20,108 +20,83 @@ pub enum ClockStyle {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DesktopTheme {
     #[default]
-    Minimal,
+    #[serde(alias = "Minimal")]
+    Navy,
+    Forest,
     #[serde(alias = "Arc")]
     Ocean,
-    #[serde(alias = "IronMan")]
-    Sand,
-    Forest,
-    Lavender,
-    Sunset,
+    #[serde(alias = "Lavender")]
+    Plum,
+    #[serde(alias = "Sunset", alias = "Sand", alias = "IronMan")]
+    Ember,
+    Graphite,
     HighContrast,
 }
 
+/// Overlay text is white with a soft shadow, as in Hermes; themes only change the accents.
 pub struct DesktopPalette {
     pub text: egui::Color32,
     pub muted: egui::Color32,
     pub accent: egui::Color32,
     pub background: egui::Color32,
     pub urgent: egui::Color32,
+    pub soon: egui::Color32,
 }
 
 impl DesktopTheme {
     pub const ALL: [Self; 7] = [
-        Self::Minimal,
-        Self::Ocean,
-        Self::Sand,
+        Self::Navy,
         Self::Forest,
-        Self::Lavender,
-        Self::Sunset,
+        Self::Ocean,
+        Self::Plum,
+        Self::Ember,
+        Self::Graphite,
         Self::HighContrast,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Minimal => "Minimal",
-            Self::Ocean => "Ocean",
-            Self::Sand => "Sand",
+            Self::Navy => "Navy",
             Self::Forest => "Forest",
-            Self::Lavender => "Lavender",
-            Self::Sunset => "Sunset",
+            Self::Ocean => "Ocean",
+            Self::Plum => "Plum",
+            Self::Ember => "Ember",
+            Self::Graphite => "Graphite",
             Self::HighContrast => "High contrast",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Minimal => "Soft white, neutral charcoal, and a simple digital clock.",
-            Self::Ocean => "Calm blue with deep navy backgrounds and a simple digital clock.",
-            Self::Sand => "Warm cream and soft gold on neutral brown backgrounds.",
-            Self::Forest => "Sage green with warm, natural neutrals.",
-            Self::Lavender => "Soft lilac with cool violet neutrals.",
-            Self::Sunset => "Muted peach with warm cocoa neutrals.",
+            Self::Navy => "Sky blue accents on deep navy.",
+            Self::Forest => "Fresh green accents with warm deadline colors.",
+            Self::Ocean => "Bright teal accents on deep sea blue.",
+            Self::Plum => "Soft violet accents with pink deadlines.",
+            Self::Ember => "Warm orange accents on dark brown.",
+            Self::Graphite => "Muted gold accents on neutral charcoal.",
             Self::HighContrast => "Bright white and yellow on dark panels for easier reading.",
         }
     }
 
     pub fn palette(self) -> DesktopPalette {
         use egui::Color32 as C;
-        let (text, muted, accent, background) = match self {
-            Self::Minimal => (
-                [240, 240, 240],
-                [164, 166, 170],
-                [225, 227, 232],
-                [18, 19, 21],
-            ),
-            Self::Ocean => (
-                [226, 242, 246],
-                [149, 177, 187],
-                [111, 211, 232],
-                [12, 24, 32],
-            ),
-            Self::Sand => (
-                [246, 235, 218],
-                [190, 164, 151],
-                [225, 184, 104],
-                [30, 26, 21],
-            ),
-            Self::Forest => (
-                [233, 241, 231],
-                [161, 183, 165],
-                [158, 205, 167],
-                [17, 28, 24],
-            ),
-            Self::Lavender => (
-                [240, 234, 250],
-                [177, 166, 195],
-                [193, 175, 237],
-                [25, 21, 36],
-            ),
-            Self::Sunset => (
-                [250, 235, 227],
-                [197, 170, 155],
-                [236, 174, 143],
-                [34, 24, 23],
-            ),
-            Self::HighContrast => ([255, 255, 255], [224, 224, 224], [255, 225, 90], [0, 0, 0]),
+        let (accent, urgent, soon, muted, background) = match self {
+            Self::Navy => (0x7DB8FF, 0xFF6B6B, 0xFFA94D, 0xC9CED8, 0x0E1A2E),
+            Self::Forest => (0x7BE0A6, 0xFF7F6E, 0xF2C14E, 0xC9DCCF, 0x0B1C14),
+            Self::Ocean => (0x5FD9E6, 0xFF7B7B, 0xFFB86B, 0xC5D9DD, 0x0A1C21),
+            Self::Plum => (0xC9A2FF, 0xFF7096, 0xFFB86B, 0xD6CDE3, 0x170F24),
+            Self::Ember => (0xFFB177, 0xFF6B6B, 0xFFD166, 0xE2D3CB, 0x1C110D),
+            Self::Graphite => (0xE8C872, 0xFF6B6B, 0xFFA94D, 0xC8CCD2, 0x121315),
+            Self::HighContrast => (0xFFE15A, 0xFF8A8A, 0xFFC04D, 0xE0E0E0, 0x000000),
         };
-        let color = |rgb: [u8; 3]| C::from_rgb(rgb[0], rgb[1], rgb[2]);
+        let color = |rgb: u32| C::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
         DesktopPalette {
-            text: color(text),
+            text: C::WHITE,
             muted: color(muted),
             accent: color(accent),
             background: color(background),
-            urgent: C::from_rgb(244, 185, 120),
+            urgent: color(urgent),
+            soon: color(soon),
         }
     }
 }
@@ -159,6 +134,7 @@ pub struct DesktopSettings {
     pub panel_opacity: u8,
     pub show_homework: bool,
     pub show_schedule: bool,
+    pub show_progress: bool,
     pub clock_scale: u16,
     pub clock_style: ClockStyle,
     pub show_date: bool,
@@ -188,6 +164,7 @@ impl Default for DesktopSettings {
             panel_opacity: 0,
             show_homework: true,
             show_schedule: true,
+            show_progress: true,
             clock_scale: 140,
             clock_style: ClockStyle::Digital,
             show_date: true,
@@ -197,7 +174,7 @@ impl Default for DesktopSettings {
             text_scale: 100,
             vertical_position: 50,
             accent: DesktopAccent::Theme,
-            theme: DesktopTheme::Minimal,
+            theme: DesktopTheme::Navy,
             custom_accent: [111, 211, 232],
             show_borders: false,
             corner_radius: 12,
@@ -294,7 +271,7 @@ mod tests {
             std::env::temp_dir().join(format!("anni-theme-test-{}.json", std::process::id()));
         for (old, new) in [
             ("Arc", DesktopTheme::Ocean),
-            ("IronMan", DesktopTheme::Sand),
+            ("IronMan", DesktopTheme::Ember),
         ] {
             std::fs::write(&path, format!(r#"{{"theme":"{old}","clock_style":"Reactor","panel_width":420,"enabled":true}}"#)).unwrap();
             let settings = DesktopSettings::load_from(&path).unwrap();
@@ -313,13 +290,27 @@ mod tests {
     }
 
     #[test]
+    fn saved_anni_themes_map_onto_the_hermes_themes() {
+        for (old, new) in [
+            ("Minimal", DesktopTheme::Navy),
+            ("Lavender", DesktopTheme::Plum),
+            ("Sunset", DesktopTheme::Ember),
+            ("Sand", DesktopTheme::Ember),
+            ("Forest", DesktopTheme::Forest),
+            ("HighContrast", DesktopTheme::HighContrast),
+        ] {
+            assert_eq!(serde_json::from_str::<DesktopTheme>(&format!("\"{old}\"")).unwrap(), new);
+        }
+    }
+
+    #[test]
     fn preferences_restore_with_defaults_and_reject_corrupt_data() {
         let path =
             std::env::temp_dir().join(format!("anni-desktop-test-{}.json", std::process::id()));
         let settings = DesktopSettings {
             enabled: true,
             side: DesktopSide::Left,
-            theme: DesktopTheme::Sand,
+            theme: DesktopTheme::Ember,
             accent: DesktopAccent::Custom,
             custom_accent: [235, 181, 102],
             clock_style: ClockStyle::Analog,
@@ -337,7 +328,8 @@ mod tests {
         assert!(restored.show_clock);
         assert_eq!(restored.side, DesktopSide::Right);
         assert_eq!(restored.panel_opacity, 80);
-        assert_eq!(restored.theme, DesktopTheme::Minimal);
+        assert_eq!(restored.theme, DesktopTheme::Navy);
+        assert!(restored.show_progress);
         assert!(!restored.show_borders);
         assert_eq!(restored.accent, DesktopAccent::Mint);
         assert_eq!(restored.clock_style, ClockStyle::Reactor);

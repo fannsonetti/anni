@@ -69,8 +69,11 @@ fn native_profile_child() {
     let window = WindowBuilder::new()
         .with_title("Anni remembered sign-in test")
         .with_inner_size(tao::dpi::LogicalSize::new(380.0, 160.0))
+        .with_visible(false)
+        .with_focused(false)
         .build(&event_loop)
         .unwrap();
+    assert!(!window.is_visible());
     let mut context = WebContext::new(Some(profile.into()));
     eprintln!("Creating synthetic WebView");
     let webview = WebViewBuilder::new_with_web_context(&mut context)
@@ -80,6 +83,10 @@ fn native_profile_child() {
         .build(&window)
         .unwrap();
     eprintln!("Synthetic WebView ready");
+    assert!(
+        !window.is_visible(),
+        "Creating a WebView must not show its hidden window"
+    );
     if phase == "write" {
         let cookie = wry::cookie::Cookie::parse("anni_remember_test=synthetic; Domain=anni-remember.test; Path=/; Max-Age=86400; Secure; HttpOnly").unwrap();
         webview.set_cookie(&cookie).unwrap();

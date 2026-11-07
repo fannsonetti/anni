@@ -5,7 +5,10 @@ use inna_core::models::*;
 use inna_core::session::{FileSessionStore, SessionStore, StoredSession};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::mpsc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc,
+};
 
 pub enum RuntimeMsg {
     SessionLoaded,
@@ -13,6 +16,8 @@ pub enum RuntimeMsg {
     SessionExpired,
     AuthNeeded,
     AuthStarted,
+    RestoringSignIn,
+    SignInRestoreFailed,
     /// Phone auth server is ready; show this URL in the main UI.
     PhoneAuthReady(String),
     SignInForgotten,
@@ -30,7 +35,10 @@ pub enum RuntimeMsg {
 
 pub struct Runtime {
     tx: mpsc::Sender<RuntimeMsg>,
-    rt: tokio::runtime::Runtime,
+    // Never dropped: that blocks until spawn_blocking work ends, so closing during the
+    // 60 s background sign-in left a windowless Anni holding the single-instance lock.
+    rt: std::mem::ManuallyDrop<tokio::runtime::Runtime>,
+    automatic_auth_attempted: AtomicBool,
 }
 
 impl Runtime {
@@ -40,7 +48,11 @@ impl Runtime {
             .enable_all()
             .build()
             .expect("failed to create tokio runtime");
-        Self { tx, rt }
+        Self {
+            tx,
+            rt: std::mem::ManuallyDrop::new(rt),
+            automatic_auth_attempted: AtomicBool::new(false),
+        }
     }
 
     pub fn start_session_check(&self, ctx: egui::Context) {
@@ -81,6 +93,33 @@ impl Runtime {
                     let _ = tx.send(RuntimeMsg::AuthNeeded);
                 }
             }
+            ctx.request_repaint();
+        });
+    }
+
+    pub fn try_restore_sign_in(&self, ctx: egui::Context) {
+        // A saved session is required: Disconnect must stay disconnected.
+        if !inna_core::auth_profile::data_path().is_dir()
+            || !matches!(
+                FileSessionStore::new(FileSessionStore::default_path()).load(),
+                Ok(Some(_))
+            )
+            || self.automatic_auth_attempted.swap(true, Ordering::SeqCst)
+        {
+            return;
+        }
+        let tx = self.tx.clone();
+        let _ = tx.send(RuntimeMsg::RestoringSignIn);
+        self.rt.spawn(async move {
+            let restored = tokio::task::spawn_blocking(|| run_local_helper(true)).await;
+            let user = match restored {
+                Ok(Ok(session)) => validate_and_save_session(session).await.ok(),
+                _ => None,
+            };
+            let _ = tx.send(match user {
+                Some(user) => RuntimeMsg::Connected(user),
+                None => RuntimeMsg::SignInRestoreFailed,
+            });
             ctx.request_repaint();
         });
     }
@@ -136,11 +175,7 @@ impl Runtime {
     fn launch_local_auth(&self, ctx: egui::Context) {
         let tx = self.tx.clone();
         std::thread::spawn(move || {
-            let auth_exe = auth_helper_path();
-            tracing::info!("launching auth helper: {}", auth_exe.display());
-
-            let output = Command::new(&auth_exe).output();
-            finish_auth_from_helper(output, tx, ctx);
+            finish_auth_from_helper(run_local_helper(false), tx, ctx);
         });
     }
 
@@ -327,72 +362,108 @@ async fn wait_for_phone_session(
 }
 
 async fn apply_session(session: StoredSession, tx: &mpsc::Sender<RuntimeMsg>) {
-    let client = match InnaClient::new() {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = tx.send(RuntimeMsg::AuthFailed(e.to_string()));
-            return;
-        }
-    };
+    let _ = tx.send(match validate_and_save_session(session).await {
+        Ok(user) => RuntimeMsg::Connected(user),
+        Err(error) => RuntimeMsg::AuthFailed(error),
+    });
+}
+
+async fn validate_and_save_session(session: StoredSession) -> Result<User, String> {
+    let client = InnaClient::new().map_err(|error| error.to_string())?;
     client.load_session(&session);
 
     match client.current_user().await {
         Ok(user) => {
             let store = FileSessionStore::new(FileSessionStore::default_path());
             if store.save(&session).is_err() {
-                let _ = tx.send(RuntimeMsg::AuthFailed(
-                    "Could not save your INNA sign-in on this computer.".into(),
-                ));
-                return;
+                return Err("Could not save your INNA sign-in on this computer.".into());
             }
-            let _ = tx.send(RuntimeMsg::Connected(user));
+            Ok(user)
         }
-        Err(e) => {
-            let _ = tx.send(RuntimeMsg::AuthFailed(format!(
-                "session validation failed: {e}"
-            )));
-        }
+        Err(e) => Err(format!("session validation failed: {e}")),
     }
 }
 
 fn finish_auth_from_helper(
-    output: std::io::Result<std::process::Output>,
+    result: Result<StoredSession, String>,
     tx: mpsc::Sender<RuntimeMsg>,
     ctx: egui::Context,
 ) {
-    match output {
-        Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            match serde_json::from_str::<StoredSession>(stdout.trim()) {
-                Ok(session) => {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .unwrap();
-                    rt.block_on(apply_session(session, &tx));
-                }
-                Err(e) => {
-                    let _ = tx.send(RuntimeMsg::AuthFailed(format!(
-                        "failed to parse auth output: {e}"
-                    )));
-                }
-            }
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let _ = tx.send(RuntimeMsg::AuthFailed(format!(
-                "auth helper exited with {}: {}",
-                out.status,
-                stderr.trim()
-            )));
+    match result {
+        Ok(session) => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(apply_session(session, &tx));
         }
         Err(e) => {
-            let _ = tx.send(RuntimeMsg::AuthFailed(format!(
-                "failed to launch auth helper: {e}"
-            )));
+            let _ = tx.send(RuntimeMsg::AuthFailed(e));
         }
     }
     ctx.request_repaint();
+}
+
+fn run_local_helper(silent: bool) -> Result<StoredSession, String> {
+    let mut command = Command::new(auth_helper_path());
+    if silent {
+        command.arg("--silent");
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW; native sign-in UI still works.
+    }
+    let child = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|error| format!("failed to launch auth helper: {error}"))?;
+    wait_for_helper(child, silent.then_some(std::time::Duration::from_secs(60)))
+}
+
+fn wait_for_helper(
+    mut child: std::process::Child,
+    timeout: Option<std::time::Duration>,
+) -> Result<StoredSession, String> {
+    // Drain stdout while polling: a session can exceed the Windows pipe buffer.
+    let mut stdout = child.stdout.take().ok_or("Missing sign-in output")?;
+    let reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).map(|_| bytes)
+    });
+    if let Some(timeout) = timeout {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(
+                        "Remembered sign-in needs attention. Reconnect in Anni to continue.".into(),
+                    );
+                }
+            }
+        }
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err("Sign-in did not complete. Reconnect in Anni to try again.".into());
+    }
+    let bytes = reader
+        .join()
+        .map_err(|_| "Could not read the sign-in result")?
+        .map_err(|_| "Could not read the sign-in result")?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| "Could not read the sign-in result. Please try again.".into())
 }
 
 fn auth_helper_path() -> PathBuf {
@@ -409,4 +480,59 @@ fn auth_helper_path() -> PathBuf {
     }
 
     path
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use std::os::windows::process::CommandExt;
+    use std::time::{Duration, Instant};
+
+    fn child(script: &str) -> std::process::Child {
+        Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .creation_flags(0x0800_0000)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn dropping_the_runtime_does_not_wait_for_a_background_sign_in() {
+        let runtime = Runtime::new(mpsc::channel().0);
+        runtime
+            .rt
+            .spawn_blocking(|| std::thread::sleep(Duration::from_secs(30)));
+        let started = Instant::now();
+        drop(runtime);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn background_helper_timeout_stops_a_stuck_process() {
+        let started = Instant::now();
+        let result = wait_for_helper(
+            child("Start-Sleep -Seconds 30"),
+            Some(Duration::from_millis(150)),
+        );
+        assert!(result.unwrap_err().contains("Reconnect in Anni"));
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn background_helper_drains_sessions_larger_than_the_pipe_buffer() {
+        let session = wait_for_helper(
+            child(r#"[Console]::Out.Write('{"cookies":[],"saved_at":"' + ('x' * 65536) + '"}')"#),
+            Some(Duration::from_secs(15)),
+        )
+        .unwrap();
+        assert_eq!(session.saved_at.len(), 65536);
+        assert!(wait_for_helper(
+            child("[Console]::Out.Write('invalid')"),
+            Some(Duration::from_secs(15))
+        )
+        .is_err());
+        assert!(wait_for_helper(child("exit 1"), Some(Duration::from_secs(15))).is_err());
+    }
 }
