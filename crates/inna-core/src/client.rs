@@ -107,7 +107,22 @@ impl InnaClient {
             from.format("%d.%m.%Y"),
             to.format("%d.%m.%Y"),
         );
-        self.get(&path).await
+        let mut entries: Vec<TimetableEntry> = self.get(&path).await?;
+        // Publish the timetable only after both sources succeed. A failed absence
+        // request must not erase cached cancellations and reactivate a sick teacher's class.
+        let absences = self.teacher_absences().await?;
+        crate::teacher_absences::apply_teacher_absences(
+            &mut entries,
+            &absences,
+            chrono::Utc::now().naive_utc(),
+        );
+        Ok(entries)
+    }
+
+    pub async fn teacher_absences(
+        &self,
+    ) -> Result<Vec<crate::teacher_absences::TeacherAbsence>, InnaError> {
+        self.get(TEACHER_ABSENCES).await
     }
 
     pub async fn announcements(&self) -> Result<Vec<Announcement>, InnaError> {
@@ -192,6 +207,54 @@ pub fn decode_xsrf(encoded: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn timetable_refresh_checks_absences_and_does_not_publish_partial_results() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let tomorrow = chrono::Utc::now().date_naive() + chrono::Duration::days(1);
+        let timetable = serde_json::json!([{
+            "titleShort":"DANS1GR05", "group":"Example group",
+            "start":format!("{tomorrow}T08:30:00Z"),
+            "end":format!("{tomorrow}T09:30:00Z")
+        }]).to_string();
+        let server = std::thread::spawn(move || {
+            for request_index in 0..6 {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+                let mut bytes = Vec::new();
+                let mut buffer = [0; 2048];
+                while !bytes.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let read = stream.read(&mut buffer).unwrap();
+                    assert!(read > 0);
+                    bytes.extend_from_slice(&buffer[..read]);
+                }
+                let request = String::from_utf8(bytes).unwrap();
+                let (status, body) = if request_index % 2 == 0 {
+                    assert!(request.starts_with(&format!("GET {TIMETABLE}?")));
+                    ("200 OK", timetable.as_str())
+                } else {
+                    assert!(request.starts_with(&format!("GET {TEACHER_ABSENCES} ")));
+                    match request_index {
+                        1 => ("200 OK", include_str!("../../../tests/fixtures/teacher_absences.json")),
+                        3 => ("200 OK", "[]"),
+                        _ => ("503 Service Unavailable", "{}"),
+                    }
+                };
+                write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        let mut client = InnaClient::new().unwrap();
+        client.base_url = format!("http://{address}");
+        client.jar.add_cookie_str("XSRF-TOKEN=test", &client.base_url.parse().unwrap());
+        let cancelled = client.timetable("student", tomorrow, tomorrow).await.unwrap();
+        assert!(cancelled[0].teacher_absent);
+        let restored = client.timetable("student", tomorrow, tomorrow).await.unwrap();
+        assert!(restored[0].is_active_lesson());
+        assert!(matches!(client.timetable("student", tomorrow, tomorrow).await, Err(InnaError::HttpStatus(503))));
+        server.join().unwrap();
+    }
 
     #[tokio::test]
     async fn schoolwork_checks_every_course_and_retains_only_failed_sources() {

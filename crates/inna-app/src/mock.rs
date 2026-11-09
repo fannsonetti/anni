@@ -109,6 +109,7 @@ fn make_entry(
         timetable_id: Some(0),
         maintable_id: Some(1000),
         student_record_id: Some(2000),
+        teacher_absent: false,
     }
 }
 

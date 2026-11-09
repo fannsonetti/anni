@@ -62,6 +62,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     };
     ui.label(RichText::new(summary).size(14.0).color(TEXT_SECONDARY));
     ui.add_space(20.0);
+    super::timetable::teacher_absence_notices(ui, state, now.date(), now.date() + Duration::days(13));
     let course_count = assignments::modules(state).len();
     let unread = state
         .announcements
@@ -744,6 +745,7 @@ mod tests {
             let mut state = AppState::new();
             state.user = Some(crate::mock::mock_user());
             state.timetable = crate::mock::mock_timetable();
+            state.timetable[0].teacher_absent = true;
             state.assignments = crate::mock::mock_assignments();
             state.assignments[0].assignments[0].name = Some("A long assignment title ".repeat(20));
             let _ = ctx.run(

@@ -41,7 +41,7 @@ pub struct DayState {
 pub fn lessons(timetable: &[TimetableEntry]) -> Vec<Segment> {
     let mut lessons: Vec<_> = timetable
         .iter()
-        .filter(|entry| entry.is_lesson())
+        .filter(|entry| entry.is_active_lesson())
         .filter_map(|entry| {
             let start = planner::parse_deadline(entry.start.as_deref()?)?.at;
             let end = planner::parse_deadline(entry.end.as_deref()?)?.at;

@@ -44,9 +44,16 @@ pub struct TimetableEntry {
     pub maintable_id: Option<i64>,
     #[serde(rename = "studentRecordId")]
     pub student_record_id: Option<i64>,
+    /// Local annotation from INNA's separate teacher-absence feed.
+    #[serde(default)]
+    pub teacher_absent: bool,
 }
 
 impl TimetableEntry {
+    pub fn is_active_lesson(&self) -> bool {
+        self.is_lesson() && !self.teacher_absent
+    }
+
     /// INNA mixes lessons and school-calendar events in the same response.
     pub fn is_lesson(&self) -> bool {
         if self.all_day == Some(true) {

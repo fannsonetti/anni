@@ -3,6 +3,7 @@ pub const INNA_BASE_URL: &str = "https://nam.inna.is";
 pub const CURRENT_USER: &str = "/api/UserData/GetLoggedInUser";
 pub const PING: &str = "/api/ModulesAndBooklist/Ping";
 pub const TIMETABLE: &str = "/api/Timetable/GetTimetable";
+pub const TEACHER_ABSENCES: &str = "/api/Absences/GetStudentTeacherAbsences";
 pub const ASSIGNMENTS: &str = "/api/GetAssignments/GetStudentAssignments";
 pub const STUDENT_PROJECTS: &str = "/api/GetAssignments/GetStudentProjects";
 pub const COURSE_ASSIGNMENTS: &str = "/api/GetAssignments/GetStudentAssignmentsGroup";

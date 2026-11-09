@@ -86,6 +86,7 @@ impl Database {
                         timetable_id: None,
                         maintable_id: None,
                         student_record_id: None,
+                        teacher_absent: false,
                     }),
                 )
             })?

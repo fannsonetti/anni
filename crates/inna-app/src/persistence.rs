@@ -93,6 +93,8 @@ mod tests {
             state.planner.set_done("other-remote-id", true);
             state.adopt_user(crate::mock::mock_user());
             state.assignments = crate::mock::mock_assignments();
+            state.timetable = crate::mock::mock_timetable();
+            state.timetable[0].teacher_absent = true;
             save(&db, &state).unwrap();
         }
         {
@@ -101,6 +103,8 @@ mod tests {
             restore(&db, &mut state).unwrap();
             assert!(state.user.is_some());
             assert!(!state.assignments.is_empty());
+            assert!(state.timetable[0].teacher_absent);
+            assert!(!state.timetable[0].is_active_lesson());
             assert!(state.planner.completed.contains("remote-id"));
             assert!(state
                 .account_planners

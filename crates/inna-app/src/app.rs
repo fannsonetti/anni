@@ -901,6 +901,8 @@ mod tests {
         let (mut app, tx) = test_app();
         let ctx = egui::Context::default();
         app.state.assignments = mock::mock_assignments();
+        app.state.timetable = mock::mock_timetable();
+        app.state.timetable[0].teacher_absent = true;
         app.state
             .last_sync
             .insert("assignments".into(), "2026-10-17T12:00:00Z".into());
@@ -911,7 +913,9 @@ mod tests {
         ))
         .unwrap();
         tx.send(RuntimeMsg::SyncFinished).unwrap();
+        tx.send(RuntimeMsg::SyncError("timetable".into(), "HTTP status 503".into())).unwrap();
         app.process_messages(&ctx);
+        assert!(app.state.timetable[0].teacher_absent);
         assert!(!app.state.assignments.is_empty());
         assert!(app.state.sync_errors.contains_key("assignments"));
         assert_eq!(app.state.last_sync["assignments"], "2026-10-17T12:00:00Z");

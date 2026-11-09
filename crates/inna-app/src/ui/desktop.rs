@@ -628,7 +628,7 @@ fn desktop_lessons(state: &AppState, now: NaiveDateTime) -> (NaiveDate, Vec<&Tim
         .timetable
         .iter()
         .filter_map(|entry| {
-            if !entry.is_lesson() {
+            if !entry.is_active_lesson() {
                 return None;
             }
             let start = planner::parse_deadline(entry.start.as_deref()?)?.at;
@@ -1470,6 +1470,11 @@ mod tests {
             desktop_lessons(&state, at("2026-10-19T10:50:00")).1[0].course_code(),
             "Physics"
         );
+        state.timetable[2].teacher_absent = true;
+        let (_, lessons) = desktop_lessons(&state, at("2026-10-18T16:00:00"));
+        assert_eq!(lessons.len(), 1);
+        assert_eq!(lessons[0].course_code(), "English");
+        assert!(desktop_lessons(&state, at("2026-10-19T09:00:00")).1.iter().all(|lesson| !lesson.teacher_absent));
     }
     #[test]
     fn schedule_keeps_future_lessons_without_end_times_and_handles_an_empty_cache() {

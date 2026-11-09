@@ -262,7 +262,7 @@ impl AppState {
             .timetable
             .iter()
             .filter(|e| {
-                e.is_lesson()
+                e.is_active_lesson()
                     && e.start
                         .as_deref()
                         .map(|s| s.starts_with(&key))
@@ -285,7 +285,7 @@ impl AppState {
             .timetable
             .iter()
             .filter_map(|e| {
-                if !e.is_lesson() {
+                if !e.is_active_lesson() {
                     return None;
                 }
                 let start = crate::planner::parse_deadline(e.start.as_deref()?)?.at;
@@ -414,5 +414,23 @@ mod tests {
             state.today_lessons().len(),
             state.lessons_for_date(Utc::now().date_naive()).len()
         );
+    }
+    #[test]
+    fn teacher_absences_are_skipped_by_next_class_and_the_day_timer() {
+        let mut state = AppState::new();
+        state.timetable = serde_json::from_value(serde_json::json!([
+            {"titleShort":"DANS1GR05", "group":"Example group", "start":"2026-11-10T08:30:00Z", "end":"2026-11-10T09:30:00Z"},
+            {"titleShort":"ENSK2HF05", "start":"2026-11-10T09:50:00Z", "end":"2026-11-10T10:50:00Z"}
+        ])).unwrap();
+        let now = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap().and_hms_opt(18, 0, 0).unwrap();
+        let notices = serde_json::from_str::<Vec<inna_core::teacher_absences::TeacherAbsence>>(
+            include_str!("../../../tests/fixtures/teacher_absences.json")).unwrap();
+        inna_core::teacher_absences::apply_teacher_absences(&mut state.timetable, &notices, now);
+        assert_eq!(state.current_and_next_lesson_at(now).1.unwrap().course_code(), "ENSK2HF05");
+        assert_eq!(state.lessons_for_date(now.date() + chrono::Duration::days(1)).len(), 1);
+        assert_eq!(crate::day::lessons(&state.timetable).len(), 1);
+        let during_cancelled = now.date().succ_opt().unwrap().and_hms_opt(9, 0, 0).unwrap();
+        assert!(state.current_and_next_lesson_at(during_cancelled).0.is_none());
+        assert_eq!(crate::day::DayState::compute(&state.timetable, during_cancelled).phase, crate::day::Phase::Before);
     }
 }

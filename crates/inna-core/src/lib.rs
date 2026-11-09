@@ -7,3 +7,4 @@ pub mod html;
 pub mod models;
 pub mod schoolwork;
 pub mod session;
+pub mod teacher_absences;

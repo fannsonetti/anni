@@ -6,6 +6,8 @@ Open **Overview** for today's timetable, your next class and room, course grades
 
 Checkmarks are local planning progress; assignments must still be submitted in INNA. Work already handed in or graded in INNA appears under Done. Items without a recognizable deadline stay visible under All open, with the original deadline text retained when available. Dates and times use Icelandic time (UTC).
 
+Timetable refreshes also read INNA's **Forföll kennara** teacher-absence notices. Matching lessons appear as cancelled in Overview and Timetable and are excluded from the next class, active schedule, desktop widgets, and school-day timer. Undated notices match the time on the nearest day for the same course and group from today onward; they never cancel every future class in that course. If either timetable source fails, Anni retains the previous timetable, including its saved cancellations.
+
 ## English interface and grades
 
 Anni uses English throughout its navigation, dates, settings, desktop widgets, and helper screens. Original school announcements, assignment titles, course codes, and names are kept as supplied by INNA. Numeric grades use decimal points.

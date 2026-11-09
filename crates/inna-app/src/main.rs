@@ -146,8 +146,14 @@ fn verify_schoolwork() -> Result<(), Box<dyn std::error::Error>> {
     runtime.block_on(async {
         let client = inna_core::client::InnaClient::new()?;
         client.load_session(&session);
-        client.current_user().await?;
-        let work = client.schoolwork(vec![], vec![], &[], chrono::Utc::now().date_naive()).await?;
+        let user = client.current_user().await?;
+        let today = chrono::Utc::now().date_naive();
+        let timetable = client.timetable(user.student_id_str().ok_or("INNA did not return a student ID")?,
+            today, today + chrono::Duration::days(13)).await?;
+        tracing::info!("Timetable verified: {} active lessons, {} teacher-absence cancellations",
+            timetable.iter().filter(|entry| entry.is_active_lesson()).count(),
+            timetable.iter().filter(|entry| entry.teacher_absent).count());
+        let work = client.schoolwork(vec![], vec![], &timetable, today).await?;
         let courses = work.assignments.len();
         let mut state = state::AppState::new();
         state.assignments = work.assignments;

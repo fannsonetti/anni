@@ -51,6 +51,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             .family(crate::ui::theme::semibold()),
     );
     ui.add_space(12.0);
+    teacher_absence_notices(ui, state, monday, sunday);
     for event in state.timetable.iter().filter(|entry| !entry.is_lesson()) {
         if let Some(date) = event
             .start
@@ -78,6 +79,25 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         day_schedule(ui, state);
     }
     ui.ctx().data_mut(|d| d.insert_temp(view_id, week));
+}
+
+pub fn teacher_absence_notices(ui: &mut Ui, state: &AppState, from: NaiveDate, to: NaiveDate) {
+    let cancelled: Vec<_> = state.timetable.iter().filter_map(|entry| {
+        let date = entry.start.as_deref().and_then(planner::parse_deadline)?.at.date();
+        (entry.teacher_absent && date >= from && date <= to).then_some((entry, date))
+    }).collect();
+    if cancelled.is_empty() {
+        return;
+    }
+    card().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(RichText::new("Teacher absences · Forföll kennara").strong());
+        for (entry, date) in cancelled {
+            ui.label(format!("{} · {} · {} · Cancelled — teacher absent",
+                locale::short_date(date), entry.course_code(), entry.time_range()));
+        }
+    });
+    ui.add_space(12.0);
 }
 
 fn day_picker(ui: &mut Ui, state: &mut AppState, monday: NaiveDate) {
@@ -498,7 +518,7 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
         let next_date = state
             .timetable
             .iter()
-            .filter(|entry| entry.is_lesson())
+            .filter(|entry| entry.is_active_lesson())
             .filter_map(|e| e.start.as_deref().and_then(planner::parse_deadline))
             .map(|d| d.at.date())
             .filter(|&d| d > state.selected_date)
