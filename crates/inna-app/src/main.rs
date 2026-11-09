@@ -5,7 +5,6 @@ mod day;
 mod desktop;
 mod desktop_platform;
 mod diagnostics;
-mod focus;
 mod grades;
 mod locale;
 mod mock;
@@ -21,7 +20,7 @@ mod updates;
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "anni", version, about = "anni — your school planner for INNA")]
+#[command(name = "anni", version, about = "anni — your school portal for INNA")]
 struct Cli {
     /// Use sample data without connecting to INNA
     #[arg(long)]

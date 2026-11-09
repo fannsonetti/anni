@@ -43,46 +43,45 @@ pub enum Page {
     Announcements,
     Assignments,
     Planner,
-    Focus,
     Connection,
 }
 
 impl Page {
     pub fn label(&self) -> &str {
         match self {
-            Self::Home => "Today",
+            Self::Home => "Overview",
             Self::Timetable => "Timetable",
             Self::Announcements => "Announcements",
             Self::Assignments => "Courses & grades",
-            Self::Planner => "My work",
-            Self::Focus => "Focus",
+            Self::Planner => "Schoolwork",
             Self::Connection => "Settings",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Home => "Your day at a glance",
-            Self::Planner => "Assignments, homework, and personal tasks",
+            Self::Home => "Your school portal at a glance",
+            Self::Planner => "Assignments, tests, homework, and submissions",
             Self::Timetable => "Lessons, rooms, and teachers",
             Self::Assignments => "Grades and progress in each course",
-            Self::Focus => "Make time for focused work",
             Self::Announcements => "News from your school",
             Self::Connection => "Your INNA connection and saved data",
         }
     }
 
-    pub const DAILY_PAGES: &'static [Page] =
-        &[Page::Home, Page::Planner, Page::Timetable, Page::Focus];
-
-    pub const SCHOOL_PAGES: &'static [Page] = &[Page::Assignments, Page::Announcements];
+    pub const SCHOOL_PAGES: &'static [Page] = &[
+        Page::Home,
+        Page::Timetable,
+        Page::Assignments,
+        Page::Planner,
+        Page::Announcements,
+    ];
 
     pub const NAV_PAGES: &'static [Page] = &[
         Page::Home,
-        Page::Planner,
         Page::Timetable,
-        Page::Focus,
         Page::Assignments,
+        Page::Planner,
         Page::Announcements,
         Page::Connection,
     ];
@@ -100,6 +99,7 @@ pub struct AppState {
     pub timetable: Vec<TimetableEntry>,
     pub announcements: Vec<Announcement>,
     pub assignments: Vec<AssignmentModule>,
+    pub grade_view: crate::grades::GradeView,
     pub homework: Vec<Homework>,
     pub todo_items: Vec<TodoItem>,
     pub selected_page: Page,
@@ -113,17 +113,9 @@ pub struct AppState {
     pub account_planners: HashMap<String, crate::planner::Planner>,
     pub work_filter: crate::planner::WorkFilter,
     pub work_search: String,
-    pub task_title: String,
-    pub task_course: String,
-    pub task_due: String,
-    pub task_error: Option<String>,
-    pub task_editor_requested: bool,
-    pub editing_task: Option<u64>,
-    pub deleted_task: Option<crate::planner::PersonalTask>,
     pub work_date: Option<NaiveDate>,
     pub announcement_search: String,
     pub announcements_unread_only: bool,
-    pub focus: crate::focus::FocusTimer,
     pub storage_dirty: bool,
     pub storage_error: Option<String>,
     pub sync_errors: HashMap<String, String>,
@@ -201,30 +193,12 @@ impl AppState {
         }
     }
 
-    pub fn new_task(&mut self) {
-        self.navigate(Page::Planner);
-        self.editing_task = None;
-        self.task_title.clear();
-        self.task_course.clear();
-        self.task_due.clear();
-        self.task_error = None;
-        self.task_editor_requested = true;
-    }
-
     pub fn adopt_user(&mut self, user: User) {
         let changed_account = self
             .user
             .as_ref()
             .is_some_and(|old| account_key(old) != account_key(&user));
         if changed_account {
-            self.focus = Default::default();
-            self.deleted_task = None;
-            self.editing_task = None;
-            self.task_title.clear();
-            self.task_course.clear();
-            self.task_due.clear();
-            self.task_error = None;
-            self.task_editor_requested = false;
             if let Some(old) = &self.user {
                 self.account_planners
                     .insert(account_key(old), std::mem::take(&mut self.planner));
@@ -254,6 +228,7 @@ impl AppState {
             timetable: Vec::new(),
             announcements: Vec::new(),
             assignments: Vec::new(),
+            grade_view: Default::default(),
             homework: Vec::new(),
             todo_items: Vec::new(),
             selected_page: Page::Home,
@@ -267,17 +242,9 @@ impl AppState {
             account_planners: HashMap::new(),
             work_filter: Default::default(),
             work_search: String::new(),
-            task_title: String::new(),
-            task_course: String::new(),
-            task_due: String::new(),
-            task_error: None,
-            task_editor_requested: false,
-            editing_task: None,
-            deleted_task: None,
             work_date: None,
             announcement_search: String::new(),
             announcements_unread_only: false,
-            focus: Default::default(),
             storage_dirty: false,
             storage_error: None,
             sync_errors: HashMap::new(),
@@ -295,10 +262,11 @@ impl AppState {
             .timetable
             .iter()
             .filter(|e| {
-                e.is_lesson() && e.start
-                    .as_deref()
-                    .map(|s| s.starts_with(&key))
-                    .unwrap_or(false)
+                e.is_lesson()
+                    && e.start
+                        .as_deref()
+                        .map(|s| s.starts_with(&key))
+                        .unwrap_or(false)
             })
             .collect();
         lessons.sort_by_key(|e| e.start_clock.as_deref().unwrap_or("99:99"));
@@ -317,7 +285,9 @@ impl AppState {
             .timetable
             .iter()
             .filter_map(|e| {
-                if !e.is_lesson() { return None; }
+                if !e.is_lesson() {
+                    return None;
+                }
                 let start = crate::planner::parse_deadline(e.start.as_deref()?)?.at;
                 let end = crate::planner::parse_deadline(e.end.as_deref()?)?.at;
                 Some((e, start, end))
@@ -355,7 +325,7 @@ mod tests {
         assert!(!state.can_go_back());
         state.navigate(Page::Timetable);
         state.navigate(Page::Timetable);
-        state.new_task();
+        state.navigate(Page::Planner);
         assert_eq!(state.selected_page, Page::Planner);
         state.go_back();
         assert_eq!(state.selected_page, Page::Timetable);
@@ -364,7 +334,7 @@ mod tests {
         assert!(!state.can_go_back());
         state.go_forward();
         assert_eq!(state.selected_page, Page::Timetable);
-        state.navigate(Page::Focus);
+        state.navigate(Page::Assignments);
         assert!(!state.can_go_forward());
     }
 
@@ -389,31 +359,19 @@ mod tests {
     }
 
     #[test]
-    fn switching_accounts_keeps_separate_personal_plans() {
+    fn switching_accounts_keeps_separate_schoolwork_checkmarks() {
         let mut state = AppState::new();
         let first = crate::mock::mock_user();
         state.adopt_user(first.clone());
-        state.planner.add("My task", "", "").unwrap();
-        state.focus.toggle(std::time::Instant::now());
-        state.deleted_task = state.planner.tasks.first().cloned();
-        state
-            .planner
-            .focus_sessions
-            .push(crate::planner::FocusSession {
-                date: Utc::now().date_naive(),
-                minutes: 25,
-                task: "First account".into(),
-            });
+        state.planner.set_done("first-schoolwork", true);
         let mut other = first.clone();
         other.student_id = Some("another-student".into());
         state.adopt_user(other);
-        assert!(state.planner.tasks.is_empty());
-        assert!(state.planner.focus_sessions.is_empty());
-        assert!(!state.focus.running());
-        assert!(state.deleted_task.is_none());
+        assert!(state.planner.completed.is_empty());
+        state.planner.set_done("other-schoolwork", true);
         state.adopt_user(first);
-        assert_eq!(state.planner.tasks[0].title, "My task");
-        assert_eq!(state.planner.focus_sessions[0].task, "First account");
+        assert!(state.planner.completed.contains("first-schoolwork"));
+        assert!(!state.planner.completed.contains("other-schoolwork"));
     }
 
     #[test]

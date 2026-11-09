@@ -158,20 +158,6 @@ impl AppData {
         self.state.storage_dirty = true;
     }
 
-    fn tick_focus(&mut self, now: Instant) {
-        if self.state.focus.tick(now) && !self.state.focus.is_break {
-            self.state
-                .planner
-                .focus_sessions
-                .push(crate::planner::FocusSession {
-                    date: Utc::now().date_naive(),
-                    minutes: self.state.focus.minutes,
-                    task: self.state.focus.task_title.clone(),
-                });
-            self.state.storage_dirty = true;
-        }
-    }
-
     fn request_refresh(&mut self, ctx: &egui::Context) {
         self.state.refresh_requested = false;
         if self.state.refreshing || self.mock_mode || self.auth_in_progress {
@@ -456,7 +442,6 @@ impl AppData {
     /// Visible desktop viewports keep synchronization and persistence alive when
     /// Windows stops sending paints to the hidden planner window.
     pub fn service(&mut self, ctx: &egui::Context) {
-        self.tick_focus(Instant::now());
         self.process_messages(ctx);
         self.periodic_tasks(ctx);
     }
@@ -504,9 +489,6 @@ impl AppData {
             return;
         }
         ctx.request_repaint_after(std::time::Duration::from_secs(15));
-        if self.state.focus.running() {
-            ctx.request_repaint_after(std::time::Duration::from_secs(1));
-        }
         ui::navigation::shortcuts(ctx, &mut self.state);
         let wide = ctx.screen_rect().width() >= 1040.0;
         if wide {
@@ -520,13 +502,10 @@ impl AppData {
                     if !wide && ui::brand::wordmark(ui, true).clicked() { self.state.navigate(Page::Home); }
                     ui::navigation::location(ui, &mut self.state);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(theme::primary_button("+ New task")).clicked() { self.state.new_task(); }
+                        ui.hyperlink_to("Open INNA ↗", "https://nam.inna.is/").on_hover_text("Open INNA for submissions and other school services");
                         let can_refresh = !self.mock_mode && !self.state.refreshing && !self.auth_in_progress
                             && matches!(self.state.connection, ConnectionState::Connected | ConnectionState::Offline) && self.state.user.is_some();
                         if ui.add_enabled(can_refresh, egui::Button::new(if self.state.refreshing { "Refreshing…" } else { "Refresh" }).frame(false)).clicked() { self.state.refresh_requested = true; }
-                        if self.state.focus.in_progress() || self.state.focus.completed {
-                            if ui.button(format!("{} · Focus", self.state.focus.clock(Instant::now()))).clicked() { self.state.navigate(Page::Focus); }
-                        }
                         if ctx.screen_rect().width() >= 1150.0 {
                             ui.label(RichText::new(self.state.connection.label()).size(11.0).color(theme::TEXT_SECONDARY));
                             let (r, _) = ui.allocate_exact_size(egui::vec2(6.0,6.0),egui::Sense::hover());
@@ -582,11 +561,10 @@ impl AppData {
                         theme::page_title(ui,"Connecting to INNA…","Finish signing in in Anni's sign-in window.");
                         ui.label("Your sign-in is remembered on this computer. Google or INNA may occasionally ask you to verify your account again.");
                     }
-                    if ui.button("Back to Today").clicked(){self.state.navigate(Page::Home);}
+                    if ui.button("Back to overview").clicked(){self.state.navigate(Page::Home);}
                 });
                 return;
             }
-            if self.state.selected_page != Page::Planner { ui::planner::undo_delete(ui, &mut self.state); }
             let inset = ((ui.available_width() - 1440.0) * 0.5).max(0.0);
             egui::Frame::none().inner_margin(egui::Margin::symmetric(inset, 0.0)).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt(format!("page_{:?}_{:?}", self.state.selected_page, self.state.selected_announcement)).auto_shrink([false,false]).show(ui,|ui| {
@@ -597,7 +575,6 @@ impl AppData {
                     Page::Announcements=>ui::announcements::show(ui,&mut self.state),
                     Page::Assignments=>ui::assignments::show(ui,&mut self.state),
                     Page::Planner=>ui::planner::show(ui,&mut self.state),
-                    Page::Focus=>ui::focus::show(ui,&mut self.state),
                     Page::Connection=>{
                         // Hermes' Settings is one narrow column of cards.
                         let inset = ((ui.available_width() - 620.0) * 0.5).max(0.0);
@@ -876,7 +853,7 @@ mod tests {
         let (mut app, tx) = test_app();
         let ctx = egui::Context::default();
         app.state.selected_page = Page::Home;
-        app.state.planner.add("Keep this plan", "", "").unwrap();
+        app.state.planner.set_done("schoolwork-id", true);
         tx.send(RuntimeMsg::RestoringSignIn).unwrap();
         tx.send(RuntimeMsg::SessionExpired).unwrap();
         app.process_messages(&ctx);
@@ -887,7 +864,7 @@ mod tests {
         app.process_messages(&ctx);
         assert!(!app.auth_in_progress);
         assert_eq!(app.state.connection, ConnectionState::SessionExpired);
-        assert_eq!(app.state.planner.tasks[0].title, "Keep this plan");
+        assert!(app.state.planner.completed.contains("schoolwork-id"));
         tx.send(RuntimeMsg::AuthStarted).unwrap();
         app.process_messages(&ctx);
         assert!(!app.background_auth_in_progress);
@@ -904,7 +881,7 @@ mod tests {
         let (mut app, tx) = test_app();
         let ctx = egui::Context::default();
         app.state.assignments = mock::mock_assignments();
-        app.state.planner.add("Keep this task", "Math", "").unwrap();
+        app.state.planner.set_done("schoolwork-id", true);
         tx.send(RuntimeMsg::AuthStarted).unwrap();
         tx.send(RuntimeMsg::SessionExpired).unwrap();
         tx.send(RuntimeMsg::Offline).unwrap();
@@ -916,27 +893,7 @@ mod tests {
         assert!(!app.auth_in_progress);
         assert_eq!(app.state.connection, ConnectionState::Starting);
         assert!(!app.state.assignments.is_empty());
-        assert_eq!(app.state.planner.tasks[0].title, "Keep this task");
-    }
-
-    #[test]
-    fn completed_study_is_saved_once_and_breaks_do_not_count_as_study() {
-        let (mut app, _) = test_app();
-        let now = Instant::now();
-        app.state.focus.task_title = "Prepare for exam".into();
-        app.state.focus.toggle(now);
-        app.tick_focus(now + std::time::Duration::from_secs(1501));
-        app.tick_focus(now + std::time::Duration::from_secs(1502));
-        assert_eq!(app.state.planner.focus_sessions.len(), 1);
-        assert_eq!(app.state.planner.focus_sessions[0].minutes, 25);
-        assert_eq!(app.state.planner.focus_sessions[0].task, "Prepare for exam");
-        assert!(app.state.storage_dirty);
-        app.state.storage_dirty = false;
-        app.state.focus.preset(5, true);
-        app.state.focus.toggle(now);
-        app.tick_focus(now + std::time::Duration::from_secs(301));
-        assert_eq!(app.state.planner.focus_sessions.len(), 1);
-        assert!(!app.state.storage_dirty);
+        assert!(app.state.planner.completed.contains("schoolwork-id"));
     }
 
     #[test]
@@ -967,15 +924,15 @@ mod tests {
     }
 
     #[test]
-    fn expired_login_keeps_cached_work_and_personal_tasks_accessible() {
+    fn expired_login_keeps_cached_work_and_checkmarks_accessible() {
         let (mut app, tx) = test_app();
         app.state.assignments = mock::mock_assignments();
-        app.state.planner.add("Study", "Math", "").unwrap();
+        app.state.planner.set_done("schoolwork-id", true);
         tx.send(RuntimeMsg::SessionExpired).unwrap();
         app.process_messages(&egui::Context::default());
         assert_eq!(app.state.connection, ConnectionState::SessionExpired);
         assert!(!app.state.assignments.is_empty());
-        assert_eq!(app.state.planner.tasks.len(), 1);
+        assert!(app.state.planner.completed.contains("schoolwork-id"));
         assert_eq!(app.state.selected_page, Page::Home);
     }
 

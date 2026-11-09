@@ -86,28 +86,11 @@ mod tests {
             state
                 .last_sync
                 .insert("assignments".into(), "2026-10-18T12:00:00Z".into());
-            state
-                .planner
-                .add("Read chapter 2", "English", "2026-10-19")
-                .unwrap();
-            state.planner.set_done("personal:1", true);
             state.planner.set_done("remote-id", true);
-            state
-                .planner
-                .edit(1, "Read chapter 3", "English", "20.10.2026")
-                .unwrap();
-            state
-                .planner
-                .focus_sessions
-                .push(crate::planner::FocusSession {
-                    date: crate::locale::parse_date("18.10.2026").unwrap(),
-                    minutes: 25,
-                    task: "Read chapter 3".into(),
-                });
             let mut other = crate::mock::mock_user();
             other.student_id = Some("other-student".into());
             state.adopt_user(other);
-            state.planner.add("Other student's task", "", "").unwrap();
+            state.planner.set_done("other-remote-id", true);
             state.adopt_user(crate::mock::mock_user());
             state.assignments = crate::mock::mock_assignments();
             save(&db, &state).unwrap();
@@ -118,24 +101,21 @@ mod tests {
             restore(&db, &mut state).unwrap();
             assert!(state.user.is_some());
             assert!(!state.assignments.is_empty());
-            assert!(state.planner.tasks[0].done);
             assert!(state.planner.completed.contains("remote-id"));
-            assert_eq!(state.planner.focus_sessions[0].minutes, 25);
-            assert_eq!(state.planner.focus_sessions[0].task, "Read chapter 3");
-            assert_eq!(
-                state.account_planners.values().next().unwrap().tasks[0].title,
-                "Other student's task"
-            );
+            assert!(state
+                .account_planners
+                .values()
+                .next()
+                .unwrap()
+                .completed
+                .contains("other-remote-id"));
+            assert!(state.planner.done_at.contains_key("remote-id"));
             state.assignments.clear();
             save(&db, &state).unwrap();
             let mut restored = AppState::new();
             restore(&db, &mut restored).unwrap();
             assert!(restored.assignments.is_empty());
-            assert_eq!(restored.planner.tasks[0].title, "Read chapter 3");
-            assert_eq!(
-                restored.planner.tasks[0].due,
-                crate::locale::parse_date("20.10.2026")
-            );
+            assert!(restored.planner.completed.contains("remote-id"));
         }
         std::fs::remove_file(path).unwrap();
     }

@@ -63,6 +63,7 @@ impl Standing {
 #[derive(Debug, Default)]
 pub struct GradeSummary {
     pub average: Option<f64>,
+    pub full_course: Option<f64>,
     pub graded_weight: f64,
     pub listed_weight: f64,
     pub counted: usize,
@@ -104,6 +105,9 @@ impl GradeSummary {
         if summary.graded_weight > 0.0 && !summary.invalid_total {
             summary.average = Some(points / summary.graded_weight);
         }
+        if summary.listed_weight > 0.0 && !summary.invalid_total {
+            summary.full_course = Some(points / 100.0);
+        }
         summary
     }
 
@@ -133,6 +137,44 @@ impl GradeSummary {
             Some("No numeric grades with positive weight are available yet. Grades with zero weight are excluded.")
         } else {
             None
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GradeView {
+    #[default]
+    GradedWork,
+    FullCourse,
+}
+
+impl GradeView {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::GradedWork => "Graded work",
+            Self::FullCourse => "Full coursework",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::GradedWork => "Weighted average of numeric grades received so far. Ungraded work is excluded.",
+            Self::FullCourse => "Points earned toward the full course out of 10. Ungraded work has earned no points yet; this is not a predicted final grade.",
+        }
+    }
+
+    pub fn value(self, summary: &GradeSummary) -> Option<f64> {
+        match self {
+            Self::GradedWork => summary.average,
+            Self::FullCourse => summary.full_course,
+        }
+    }
+
+    pub fn standing(self, summary: &GradeSummary) -> Standing {
+        if self == Self::FullCourse && summary.graded_weight < 100.0 - 1e-6 {
+            Standing::Unknown
+        } else {
+            summary.standing()
         }
     }
 }
@@ -181,6 +223,47 @@ mod tests {
         assert_eq!(s.counted, 2);
         assert_eq!(s.non_numeric, 1);
         assert_eq!(s.standing(), Standing::Unknown);
+    }
+
+    #[test]
+    fn full_course_counts_earned_points_against_one_hundred_percent() {
+        let s = GradeSummary::for_module(&module(serde_json::json!([
+            {"grade":"8", "weight":20}, {"weight":80}
+        ])));
+        assert_eq!(GradeView::GradedWork.value(&s), Some(8.0));
+        assert_eq!(GradeView::FullCourse.value(&s), Some(1.6));
+        assert_eq!(GradeView::FullCourse.standing(&s), Standing::Unknown);
+
+        // An incomplete list must not inflate the points earned so far.
+        let s = GradeSummary::for_module(&module(serde_json::json!([
+            {"grade":"8", "weight":20}
+        ])));
+        assert_eq!(s.full_course, Some(1.6));
+        let s = GradeSummary::for_module(&module(serde_json::json!([
+            {"weight":100}
+        ])));
+        assert_eq!(s.average, None);
+        assert_eq!(s.full_course, Some(0.0));
+        assert_eq!(
+            GradeSummary::for_module(&module(serde_json::json!([]))).full_course,
+            None
+        );
+    }
+
+    #[test]
+    fn completed_course_views_agree_and_invalid_weights_hide_both() {
+        let s = GradeSummary::for_module(&module(serde_json::json!([
+            {"grade":"0", "weight":20}, {"grade":"7,5", "weight":80},
+            {"grade":"10", "weight":0}
+        ])));
+        assert_eq!(s.average, Some(6.0));
+        assert_eq!(s.full_course, s.average);
+        assert_eq!(GradeView::FullCourse.standing(&s), Standing::Above);
+        let s = GradeSummary::for_module(&module(serde_json::json!([
+            {"grade":"8", "weight":70}, {"grade":"8", "weight":70}
+        ])));
+        assert_eq!(s.full_course, None);
+        assert_eq!(s.average, None);
     }
 
     #[test]
@@ -239,5 +322,7 @@ mod tests {
         assert_eq!(groups[1].1.average, Some(10.0));
         assert_eq!(groups[0].1.listed_weight, 40.0);
         assert_eq!(groups[1].1.listed_weight, 60.0);
+        assert_eq!(groups[0].1.full_course, Some(2.8));
+        assert_eq!(groups[1].1.full_course, Some(3.0));
     }
 }

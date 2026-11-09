@@ -3,7 +3,7 @@ use crate::{
     ui::{brand, theme::*},
     updates::Progress,
 };
-use egui::{Align, Align2, Color32, FontId, Layout, RichText, Sense, Stroke};
+use egui::{Align, Align2, FontId, Layout, RichText, Sense, Stroke};
 use std::time::Duration;
 
 pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applying: bool) -> bool {
@@ -13,7 +13,7 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
             egui::Frame::none()
                 .fill(PANEL_BG)
                 .stroke(Stroke::new(1.0, BORDER))
-                .rounding(16.0)
+                .rounding(2.0)
                 .inner_margin(24.0),
         )
         .show(ctx, |ui| {
@@ -115,10 +115,10 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
             );
             ui.add_space(12.0);
             let (bar, _) =
-                ui.allocate_exact_size(egui::vec2(ui.available_width(), 10.0), Sense::hover());
+                ui.allocate_exact_size(egui::vec2(ui.available_width(), 4.0), Sense::hover());
             let painter = ui.painter();
-            painter.rect_filled(bar, 5.0, BG_DARK);
-            painter.rect_stroke(bar, 5.0, Stroke::new(1.0, BORDER));
+            painter.rect_filled(bar, 1.0, BG_DARK);
+            painter.rect_stroke(bar, 1.0, Stroke::new(1.0, BORDER));
             let color = if matches!(progress, Progress::Failed(_)) {
                 WARNING
             } else {
@@ -130,12 +130,7 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
                         bar.min,
                         egui::vec2(bar.width() * fraction, bar.height()),
                     );
-                    painter.rect_filled(fill, 5.0, color);
-                    let shine = egui::Rect::from_min_size(
-                        fill.min + egui::vec2(1.0, 1.0),
-                        egui::vec2((fill.width() - 2.0).max(0.0), 2.0),
-                    );
-                    painter.rect_filled(shine, 1.0, Color32::from_white_alpha(65));
+                    painter.rect_filled(fill, 1.0, color);
                 }
             } else {
                 let segment = bar.width() * 0.28;
@@ -147,7 +142,7 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
                 );
                 painter
                     .with_clip_rect(bar.shrink(1.0))
-                    .rect_filled(moving, 4.0, color);
+                    .rect_filled(moving, 1.0, color);
             }
             ui.add_space(5.0);
             ui.horizontal(|ui| {

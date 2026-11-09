@@ -6,7 +6,7 @@ use crate::{
     ui::{assignments, theme::*},
 };
 use chrono::{Datelike, Duration, Timelike, Utc};
-use egui::{vec2, Align, Color32, FontId, Layout, RichText, Sense, Stroke, Ui};
+use egui::{vec2, Align, FontId, Layout, RichText, Sense, Stroke, Ui};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum QueueView {
@@ -43,9 +43,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     ui.label(
         RichText::new(
             name.map(|n| format!("{greeting}, {n}"))
-                .unwrap_or_else(|| "Your day, at a glance".into()),
+                .unwrap_or_else(|| "Your school, at a glance".into()),
         )
-        .size(32.0)
+        .size(28.0)
         .family(crate::ui::theme::semibold()),
     );
     ui.add_space(3.0);
@@ -62,41 +62,49 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     };
     ui.label(RichText::new(summary).size(14.0).color(TEXT_SECONDARY));
     ui.add_space(20.0);
-    let open_count = items.iter().filter(|item| !item.done).count();
+    let course_count = assignments::modules(state).len();
+    let unread = state
+        .announcements
+        .iter()
+        .filter(|a| a.has_opened == Some(false))
+        .count();
     ui.columns(3, |columns| {
-        for (index, (label, count, color, hint)) in [
-            ("Due today", due_today, ACCENT, "Your deadlines today"),
-            ("Overdue", overdue, WARNING, "Needs your attention"),
-            ("Open tasks", open_count, VIOLET, "Everything on your list"),
+        for (index, (label, count)) in [
+            ("Courses & grades", course_count),
+            ("Unread notices", unread),
+            ("Due today", due_today),
         ]
         .into_iter()
         .enumerate()
         {
-            let response = surface()
+            let response = egui::Frame::none()
                 .inner_margin(egui::Margin::symmetric(16.0, 12.0))
                 .show(&mut columns[index], |ui| {
                     ui.set_min_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(label).size(12.0).color(TEXT_SECONDARY));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.label(RichText::new(count.to_string()).size(26.0).color(color));
+                            ui.label(
+                                RichText::new(count.to_string())
+                                    .size(24.0)
+                                    .color(TEXT_PRIMARY),
+                            );
                         });
                     });
-                    ui.label(RichText::new(hint).size(11.0).color(TEXT_DIM));
                 })
                 .response
                 .interact(Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if response.clicked() {
                 if index == 1 {
-                    columns[index].ctx().data_mut(|d| {
-                        d.insert_temp(egui::Id::new("home_queue_view"), QueueView::Overdue)
-                    });
+                    state.announcements_unread_only = true;
+                    state.announcement_search.clear();
+                    state.navigate(Page::Announcements);
                 } else if index == 0 {
+                    state.navigate(Page::Assignments);
+                } else {
                     open_work(state, WorkFilter::Today);
                     state.work_date = Some(now.date());
-                } else {
-                    open_work(state, WorkFilter::Open);
                 }
             }
         }
@@ -110,49 +118,45 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             ui.allocate_ui_with_layout(vec2(left, 0.0), Layout::top_down(Align::Min), |ui| {
                 ui.set_width(left);
                 ui.spacing_mut().item_spacing.x = 8.0;
+                schedule(ui, state);
+                ui.add_space(17.0);
                 priority_queue(ui, state, &items);
                 ui.add_space(17.0);
                 week(ui, state, &items);
-                if !state.today_lessons().is_empty() {
-                    ui.add_space(17.0);
-                    schedule(ui, state);
-                }
-                ui.add_space(17.0);
-                news(ui, state);
             });
             ui.allocate_ui_with_layout(vec2(right, 0.0), Layout::top_down(Align::Min), |ui| {
                 ui.set_width(right);
                 ui.spacing_mut().item_spacing.x = 8.0;
                 next_lesson(ui, state);
                 ui.add_space(15.0);
-                focus(ui, state);
-                ui.add_space(15.0);
                 courses(ui, state);
+                ui.add_space(15.0);
+                news(ui, state);
             });
         });
     } else {
         next_lesson(ui, state);
         ui.add_space(15.0);
-        priority_queue(ui, state, &items);
-        ui.add_space(17.0);
-        week(ui, state, &items);
-        ui.add_space(17.0);
-        focus(ui, state);
-        if !state.today_lessons().is_empty() {
-            ui.add_space(17.0);
-            schedule(ui, state);
-        }
+        schedule(ui, state);
         ui.add_space(17.0);
         courses(ui, state);
         ui.add_space(17.0);
         news(ui, state);
+        ui.add_space(17.0);
+        priority_queue(ui, state, &items);
+        ui.add_space(17.0);
+        week(ui, state, &items);
     }
 }
 
 fn section(ui: &mut Ui, title: &str, action: &str) -> bool {
     let mut clicked = false;
     ui.horizontal(|ui| {
-        ui.label(RichText::new(title).size(17.0).family(crate::ui::theme::semibold()));
+        ui.label(
+            RichText::new(title)
+                .size(17.0)
+                .family(crate::ui::theme::semibold()),
+        );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             clicked = ui
                 .add(
@@ -166,7 +170,9 @@ fn section(ui: &mut Ui, title: &str, action: &str) -> bool {
 }
 
 fn surface() -> egui::Frame {
-    card().inner_margin(egui::Margin::symmetric(18.0, 14.0)).outer_margin(0.0)
+    card()
+        .inner_margin(egui::Margin::symmetric(18.0, 14.0))
+        .outer_margin(0.0)
 }
 
 fn divider(ui: &mut Ui) {
@@ -180,7 +186,7 @@ fn divider(ui: &mut Ui) {
 fn priority_queue(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        if section(ui, "Up next", "View all →") {
+        if section(ui, "Schoolwork & deadlines", "View all →") {
             open_work(state, WorkFilter::Open);
         }
         ui.add_space(10.0);
@@ -226,13 +232,13 @@ fn priority_queue(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
                 .size(20.0),
             );
             ui.label(
-                RichText::new("Add a personal task or look ahead to your next deadline.")
+                RichText::new("Assignments, tests, and homework from INNA appear here.")
                     .size(13.0)
                     .color(TEXT_SECONDARY),
             );
             ui.add_space(14.0);
-            if ui.add(primary_button("+ Add a task")).clicked() {
-                state.new_task();
+            if ui.button("Open schoolwork →").clicked() {
+                open_work(state, WorkFilter::Open);
             }
             ui.add_space(9.0);
         }
@@ -247,7 +253,7 @@ fn priority_queue(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
             if ui
                 .add(
                     egui::Button::new(
-                        RichText::new("Open full task list →")
+                        RichText::new("Open all schoolwork →")
                             .size(12.0)
                             .color(ACCENT),
                     )
@@ -282,7 +288,7 @@ fn task_row(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     if response.hovered() {
         ui.painter()
-            .rect_filled(rect.shrink2(vec2(0.0, 3.0)), 8.0, PANEL_BG);
+            .rect_filled(rect.shrink2(vec2(0.0, 3.0)), 2.0, PANEL_BG);
     }
     let mut done = false;
     let check = egui::Rect::from_min_size(rect.min + vec2(0.0, 17.0), vec2(27.0, 29.0));
@@ -340,26 +346,6 @@ fn task_row(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
             TEXT_DIM,
         );
     }
-    let focus_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.right() - 65.0, rect.bottom() - 31.0),
-        vec2(65.0, 26.0),
-    );
-    if ui
-        .put(
-            focus_rect,
-            egui::Button::new(RichText::new("Focus →").size(11.0).color(TEXT_SECONDARY))
-                .frame(false),
-        )
-        .clicked()
-    {
-        if !state.focus.in_progress() {
-            state.focus.reset();
-            state.focus.preset(25, false);
-            state.focus.task_key = item.key.clone();
-            state.focus.task_title = item.title.clone();
-        }
-        state.navigate(Page::Focus);
-    }
 }
 
 fn compact_due(item: &WorkItem, today: chrono::NaiveDate) -> String {
@@ -389,101 +375,94 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
     let (current, next) = state.current_and_next_lesson();
     let lesson = current.or(next).cloned();
     let live = current.is_some();
-    surface()
-        .fill(NOW_HIGHLIGHT)
-        .stroke(Stroke::new(1.0, Color32::from_rgb(0x2E, 0x4A, 0x72)))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(6.0, 6.0), Sense::hover());
-                ui.painter().circle_filled(r.center(), 3.0, ACCENT);
-                ui.label(
-                    RichText::new(if live {
-                        "IN CLASS NOW"
-                    } else {
-                        "YOUR NEXT CLASS"
-                    })
-                    .size(10.0)
-                    .family(crate::ui::theme::semibold())
-                    .color(ACCENT),
-                );
+    surface().show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(if live {
+                    "IN CLASS NOW"
+                } else {
+                    "YOUR NEXT CLASS"
+                })
+                .size(10.0)
+                .family(crate::ui::theme::semibold())
+                .color(ACCENT),
+            );
+        });
+        ui.add_space(13.0);
+        if let Some(lesson) = lesson {
+            let start = lesson
+                .start
+                .as_deref()
+                .and_then(planner::parse_deadline)
+                .map(|d| d.at);
+            let date = start
+                .map(|s| {
+                    let days = (s.date() - now.date()).num_days();
+                    match days {
+                        0 => "Today".into(),
+                        1 => format!("Tomorrow · {}", locale::weekday(s.date())),
+                        _ => locale::day(s.date()),
+                    }
+                })
+                .unwrap_or_else(|| "Next scheduled lesson".into());
+            ui.label(RichText::new(date).size(12.0).color(TEXT_SECONDARY));
+            ui.label(RichText::new(lesson.time_range()).size(30.0));
+            ui.add_space(11.0);
+            ui.label(
+                RichText::new(assignments::subject(lesson.course_code()))
+                    .size(23.0)
+                    .family(crate::ui::theme::semibold()),
+            );
+            ui.label(
+                RichText::new(lesson.course_code())
+                    .size(12.0)
+                    .color(TEXT_SECONDARY),
+            );
+            ui.add_space(11.0);
+            ui.horizontal_wrapped(|ui| {
+                if !lesson.room().is_empty() {
+                    badge(ui, &format!("Room {}", lesson.room()), ACCENT);
+                }
+                if !lesson.teacher_str().is_empty() {
+                    ui.label(
+                        RichText::new(lesson.teacher_str())
+                            .size(12.0)
+                            .color(TEXT_SECONDARY),
+                    );
+                }
             });
             ui.add_space(13.0);
-            if let Some(lesson) = lesson {
-                let start = lesson
-                    .start
-                    .as_deref()
-                    .and_then(planner::parse_deadline)
-                    .map(|d| d.at);
-                let date = start
-                    .map(|s| {
-                        let days = (s.date() - now.date()).num_days();
-                        match days {
-                            0 => "Today".into(),
-                            1 => format!("Tomorrow · {}", locale::weekday(s.date())),
-                            _ => locale::day(s.date()),
-                        }
-                    })
-                    .unwrap_or_else(|| "Next scheduled lesson".into());
-                ui.label(RichText::new(date).size(12.0).color(TEXT_SECONDARY));
-                ui.label(RichText::new(lesson.time_range()).size(30.0));
-                ui.add_space(11.0);
-                ui.label(
-                    RichText::new(assignments::subject(lesson.course_code()))
-                        .size(23.0)
-                        .family(crate::ui::theme::semibold()),
-                );
-                ui.label(
-                    RichText::new(lesson.course_code())
-                        .size(12.0)
-                        .color(TEXT_SECONDARY),
-                );
-                ui.add_space(11.0);
-                ui.horizontal_wrapped(|ui| {
-                    if !lesson.room().is_empty() {
-                        badge(ui, &format!("Room {}", lesson.room()), ACCENT);
-                    }
-                    if !lesson.teacher_str().is_empty() {
-                        ui.label(
-                            RichText::new(lesson.teacher_str())
-                                .size(12.0)
-                                .color(TEXT_SECONDARY),
-                        );
-                    }
-                });
-                ui.add_space(13.0);
-                if ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new("Open timetable →").size(12.0).color(ACCENT),
-                        )
+            if ui
+                .add(
+                    egui::Button::new(RichText::new("Open timetable →").size(12.0).color(ACCENT))
                         .frame(false),
-                    )
-                    .clicked()
-                {
-                    if let Some(start) = start {
-                        state.selected_date = start.date();
-                    }
-                    state.navigate(Page::Timetable);
+                )
+                .clicked()
+            {
+                if let Some(start) = start {
+                    state.selected_date = start.date();
                 }
-            } else {
-                ui.label(RichText::new("No upcoming classes").size(24.0));
-                ui.add_space(5.0);
-                ui.label(
-                    RichText::new(if state.last_sync.contains_key("timetable") {
-                        "No upcoming lessons in your saved timetable."
-                    } else {
-                        "Connect INNA to see your next class."
-                    })
-                    .size(13.0)
-                    .color(TEXT_SECONDARY),
-                );
-                ui.add_space(12.0);
-                if ui.button("Open timetable →").clicked() {
-                    state.navigate(Page::Timetable);
-                }
+                state.navigate(Page::Timetable);
             }
-        });
+        } else {
+            ui.label(RichText::new("No upcoming classes").size(24.0));
+            ui.add_space(5.0);
+            ui.label(
+                RichText::new(if state.last_sync.contains_key("timetable") {
+                    "No upcoming lessons in your saved timetable."
+                } else {
+                    "Connect INNA to see your next class."
+                })
+                .size(13.0)
+                .color(TEXT_SECONDARY),
+            );
+            ui.add_space(12.0);
+            if ui.button("Open timetable →").clicked() {
+                state.navigate(Page::Timetable);
+            }
+        }
+    });
 }
 
 fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
@@ -500,7 +479,11 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
-            ui.label(RichText::new("The next 7 days").size(17.0).family(crate::ui::theme::semibold()));
+            ui.label(
+                RichText::new("The next 7 days")
+                    .size(17.0)
+                    .family(crate::ui::theme::semibold()),
+            );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
                     RichText::new(locale::counted(
@@ -522,7 +505,7 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
                 let today_tile = i == 0;
                 col.painter().rect_filled(
                     r,
-                    10.0,
+                    2.0,
                     if today_tile {
                         ACCENT_DIM
                     } else if response.hovered() {
@@ -534,7 +517,7 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
                 if today_tile {
                     col.painter().rect_stroke(
                         r,
-                        10.0,
+                        2.0,
                         Stroke::new(1.0, ACCENT.linear_multiply(0.4)),
                     );
                 }
@@ -589,57 +572,6 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
     });
 }
 
-fn focus(ui: &mut Ui, state: &mut AppState) {
-    let today = Utc::now().date_naive();
-    let sessions: Vec<_> = state
-        .planner
-        .focus_sessions
-        .iter()
-        .filter(|s| s.date == today)
-        .collect();
-    let minutes: u32 = sessions.iter().map(|s| s.minutes).sum();
-    let session_count = sessions.len();
-    surface().show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        ui.label(RichText::new("Focus time").size(17.0).family(crate::ui::theme::semibold()));
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(minutes.to_string()).size(32.0));
-            ui.vertical(|ui| {
-                ui.label(
-                    RichText::new("minutes today")
-                        .size(12.0)
-                        .color(TEXT_SECONDARY),
-                );
-                ui.label(
-                    RichText::new(locale::counted(
-                        session_count,
-                        "completed session",
-                        "completed sessions",
-                    ))
-                    .size(11.0)
-                    .color(TEXT_DIM),
-                );
-            });
-        });
-        ui.add_space(10.0);
-        let label = if state.focus.in_progress() {
-            format!(
-                "{} · Return to session",
-                state.focus.clock(std::time::Instant::now())
-            )
-        } else {
-            "Start a focus session →".into()
-        };
-        if ui
-            .add_sized([ui.available_width(), 36.0], primary_button(&label))
-            .clicked()
-        {
-            state.navigate(Page::Focus);
-        }
-    });
-}
-
 fn courses(ui: &mut Ui, state: &mut AppState) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
@@ -647,6 +579,8 @@ fn courses(ui: &mut Ui, state: &mut AppState) {
             state.navigate(Page::Assignments);
         }
         ui.add_space(11.0);
+        assignments::grade_view_picker(ui, &mut state.grade_view);
+        let view = state.grade_view;
         let modules = assignments::modules(state);
         if modules.is_empty() {
             ui.label(
@@ -674,13 +608,12 @@ fn courses(ui: &mut Ui, state: &mut AppState) {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(
                         RichText::new(
-                            summary
-                                .average
+                            view.value(&summary)
                                 .map(grades::average_text)
                                 .unwrap_or_else(|| "—".into()),
                         )
                         .size(21.0)
-                        .color(match summary.standing() {
+                        .color(match view.standing(&summary) {
                             Standing::Above => ACCENT,
                             Standing::Below => WARNING,
                             Standing::Unknown => TEXT_SECONDARY,
@@ -691,7 +624,7 @@ fn courses(ui: &mut Ui, state: &mut AppState) {
         }
         ui.add_space(12.0);
         ui.label(
-            RichText::new("Weighted averages · out of 10")
+            RichText::new(format!("{} · out of 10", view.label()))
                 .size(10.0)
                 .color(TEXT_DIM),
         );
@@ -706,7 +639,19 @@ fn schedule(ui: &mut Ui, state: &mut AppState) {
             state.navigate(Page::Timetable);
         }
         ui.add_space(10.0);
-        for lesson in state.today_lessons() {
+        let lessons = state.today_lessons();
+        if lessons.is_empty() {
+            ui.label(
+                RichText::new(if state.last_sync.contains_key("timetable") {
+                    "No classes scheduled today."
+                } else {
+                    "Connect INNA and refresh to see your timetable."
+                })
+                .size(13.0)
+                .color(TEXT_SECONDARY),
+            );
+        }
+        for lesson in lessons {
             ui.horizontal(|ui| {
                 ui.label(
                     RichText::new(lesson.start_clock.as_deref().unwrap_or("—"))
@@ -800,10 +745,7 @@ mod tests {
             state.user = Some(crate::mock::mock_user());
             state.timetable = crate::mock::mock_timetable();
             state.assignments = crate::mock::mock_assignments();
-            state
-                .planner
-                .add(&"A long assignment title ".repeat(20), "English", "")
-                .unwrap();
+            state.assignments[0].assignments[0].name = Some("A long assignment title ".repeat(20));
             let _ = ctx.run(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(

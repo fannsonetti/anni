@@ -4,73 +4,15 @@ use std::collections::{HashMap, HashSet};
 
 use crate::state::AppState;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersonalTask {
-    pub id: u64,
-    pub title: String,
-    pub course: String,
-    pub due: Option<NaiveDate>,
-    pub done: bool,
-}
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Planner {
-    pub tasks: Vec<PersonalTask>,
     pub completed: HashSet<String>,
-    pub next_id: u64,
-    pub focus_sessions: Vec<FocusSession>,
     /// When work was ticked: the desktop keeps it struck through for a day.
     pub done_at: HashMap<String, NaiveDateTime>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FocusSession {
-    pub date: NaiveDate,
-    pub minutes: u32,
-    pub task: String,
-}
-
 impl Planner {
-    pub fn edit(&mut self, id: u64, title: &str, course: &str, due: &str) -> Result<(), String> {
-        // Reuse creation validation before mutating the existing task.
-        let mut draft = Planner::default();
-        draft.add(title, course, due)?;
-        let replacement = draft.tasks.pop().unwrap();
-        let task = self
-            .tasks
-            .iter_mut()
-            .find(|t| t.id == id)
-            .ok_or_else(|| "This task could not be found.".to_string())?;
-        task.title = replacement.title;
-        task.course = replacement.course;
-        task.due = replacement.due;
-        Ok(())
-    }
-
-    pub fn add(&mut self, title: &str, course: &str, due: &str) -> Result<(), String> {
-        if title.trim().is_empty() {
-            return Err("Enter a task title.".into());
-        }
-        let due = if due.trim().is_empty() {
-            None
-        } else {
-            Some(
-                crate::locale::parse_date(due)
-                    .ok_or_else(|| "Enter a date as dd.mm.yyyy, or leave it blank.".to_string())?,
-            )
-        };
-        self.next_id += 1;
-        self.tasks.push(PersonalTask {
-            id: self.next_id,
-            title: title.trim().into(),
-            course: course.trim().into(),
-            due,
-            done: false,
-        });
-        Ok(())
-    }
-
     pub fn set_done(&mut self, key: &str, done: bool) {
         let now = chrono::Utc::now().naive_utc();
         self.done_at
@@ -80,14 +22,7 @@ impl Planner {
         } else {
             self.done_at.remove(key);
         }
-        if let Some(id) = key
-            .strip_prefix("personal:")
-            .and_then(|s| s.parse::<u64>().ok())
-        {
-            if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
-                task.done = done;
-            }
-        } else if done {
+        if done {
             self.completed.insert(key.into());
         } else {
             self.completed.remove(key);
@@ -101,7 +36,6 @@ pub enum WorkKind {
     Exam,
     Homework,
     InnaTask,
-    Personal,
 }
 
 impl WorkKind {
@@ -111,7 +45,6 @@ impl WorkKind {
             Self::Exam => "Exam",
             Self::Homework => "Homework",
             Self::InnaTask => "INNA task",
-            Self::Personal => "Personal task",
         }
     }
 }
@@ -124,7 +57,6 @@ impl WorkKind {
             Self::Exam => "Exam",
             Self::Homework => "Homework",
             Self::InnaTask => "INNA task",
-            Self::Personal => "Personal task",
         }
     }
 }
@@ -437,23 +369,6 @@ pub fn work_items(state: &AppState) -> Vec<WorkItem> {
         }
     }
     items = deduplicated;
-    for task in &state.planner.tasks {
-        items.push(WorkItem {
-            key: format!("personal:{}", task.id),
-            completion_keys: Vec::new(),
-            title: task.title.clone(),
-            course: task.course.clone(),
-            kind: WorkKind::Personal,
-            deadline: task.due.map(|d| Deadline {
-                at: d.and_hms_opt(23, 59, 59).unwrap(),
-                has_time: false,
-            }),
-            due_text: String::new(),
-            detail: String::new(),
-            source_done: false,
-            done: task.done,
-        });
-    }
     items.sort_by_cached_key(|item| {
         (
             item.done,
@@ -592,50 +507,18 @@ mod tests {
     }
 
     #[test]
-    fn editing_validates_before_mutating_and_preserves_identity_and_completion() {
-        let mut plan = Planner::default();
-        plan.add("Old title", "Math", "2026-10-18").unwrap();
-        plan.set_done("personal:1", true);
-        assert!(plan.edit(1, "New title", "English", "invalid").is_err());
-        assert_eq!(plan.tasks[0].title, "Old title");
-        plan.edit(1, " New title ", " English ", "19.10.2026")
-            .unwrap();
-        let task = &plan.tasks[0];
-        assert_eq!(task.title, "New title");
-        assert_eq!(task.course, "English");
-        assert_eq!(task.due, NaiveDate::from_ymd_opt(2026, 10, 19));
-        assert_eq!(task.id, 1);
-        assert!(task.done);
-        assert_eq!(plan.next_id, 1);
-        assert!(plan.edit(99, "Missing", "", "").is_err());
-    }
-
-    #[test]
-    fn older_plans_restore_without_focus_history() {
-        let plan: Planner =
-            serde_json::from_str(r#"{"tasks":[],"completed":[],"next_id":4}"#).unwrap();
-        assert!(plan.focus_sessions.is_empty());
-        assert_eq!(plan.next_id, 4);
-    }
-
-    #[test]
     fn localization_preserves_existing_completion_keys_and_accepts_icelandic_dates() {
         let mut state = AppState::new();
         state.homework = serde_json::from_value(
-            serde_json::json!([{"id":42,"title":"Read","moduleName":"ENSK"}]),
+            serde_json::json!([{"id":42,"title":"Read","moduleName":"ENSK","dueDate":"18.10.2026"}]),
         )
         .unwrap();
         let key = serde_json::to_string(&("Homework", "ENSK", "42")).unwrap();
         state.planner.completed.insert(key.clone());
         assert_eq!(work_items(&state)[0].key, key);
         assert!(work_items(&state)[0].done);
-        state.planner.add("Læra", "English", "18.10.2026").unwrap();
-        let local = work_items(&state)
-            .into_iter()
-            .find(|i| i.kind == WorkKind::Personal)
-            .unwrap();
         assert_eq!(
-            local.due_label(NaiveDate::from_ymd_opt(2026, 10, 17).unwrap()),
+            work_items(&state)[0].due_label(NaiveDate::from_ymd_opt(2026, 10, 17).unwrap()),
             "Tomorrow"
         );
     }
@@ -711,20 +594,6 @@ mod tests {
     }
 
     #[test]
-    fn personal_tasks_validate_and_round_trip_with_completion() {
-        let mut plan = Planner::default();
-        assert!(plan.add(" ", "", "").is_err());
-        assert!(plan.add("Study", "", "invalid").is_err());
-        plan.add(" Study ", " Math ", "2026-10-18").unwrap();
-        plan.set_done("personal:1", true);
-        let restored: Planner =
-            serde_json::from_str(&serde_json::to_string(&plan).unwrap()).unwrap();
-        assert_eq!(restored.tasks[0].title, "Study");
-        assert!(restored.tasks[0].done);
-        assert_eq!(restored.next_id, 1);
-    }
-
-    #[test]
     fn homework_and_todo_join_the_plan_and_date_only_is_not_overdue_at_noon() {
         let mut state = AppState::new();
         state.homework = serde_json::from_value(
@@ -742,6 +611,26 @@ mod tests {
                 .unwrap()
         ));
         assert_eq!(items[1].title, "Bring book");
+    }
+
+    #[test]
+    fn legacy_plans_ignore_removed_features_and_keep_schoolwork_completion() {
+        let mut state = AppState::new();
+        state.planner = serde_json::from_value(serde_json::json!({
+            "tasks": [{"id": 1, "title": "Old task", "course": "", "due": null, "done": false}],
+            "next_id": 1,
+            "focus_sessions": [{"date": "2026-10-18", "minutes": 25, "task": "Old task"}],
+            "completed": ["remote-id"],
+            "done_at": {"remote-id": "2026-10-18T12:00:00"}
+        }))
+        .unwrap();
+        assert!(work_items(&state).is_empty());
+        assert!(state.planner.completed.contains("remote-id"));
+        assert!(state.planner.done_at.contains_key("remote-id"));
+        let saved = serde_json::to_value(&state.planner).unwrap();
+        assert!(saved.get("tasks").is_none());
+        assert!(saved.get("focus_sessions").is_none());
+        assert!(saved.get("next_id").is_none());
     }
 
     use chrono::Timelike;

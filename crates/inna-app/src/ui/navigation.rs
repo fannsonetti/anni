@@ -29,9 +29,7 @@ pub fn sidebar(ctx: &egui::Context, state: &mut AppState) {
                 .id_salt("sidebar_pages")
                 .max_height(menu_height)
                 .show(ui, |ui| {
-                    group(ui, state, "YOUR WORKSPACE", Page::DAILY_PAGES);
-                    ui.add_space(18.0);
-                    group(ui, state, "SCHOOL", Page::SCHOOL_PAGES);
+                    group(ui, state, "School", Page::SCHOOL_PAGES);
                 });
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 if let Some(user) = &state.user {
@@ -121,19 +119,21 @@ pub fn compact_bar(ctx: &egui::Context, state: &mut AppState) {
                 for (column, page) in
                     columns
                         .iter_mut()
-                        .zip([Page::Home, Page::Planner, Page::Timetable])
+                        .zip([Page::Home, Page::Timetable, Page::Assignments])
                 {
                     let selected = state.selected_page == page;
                     if column
                         .add_sized(
                             [column.available_width(), 46.0],
-                            egui::Button::new(RichText::new(page.label()).family(crate::ui::theme::semibold()).color(
-                                if selected {
-                                    theme::ACCENT
-                                } else {
-                                    theme::TEXT_SECONDARY
-                                },
-                            ))
+                            egui::Button::new(
+                                RichText::new(page.label())
+                                    .family(crate::ui::theme::semibold())
+                                    .color(if selected {
+                                        theme::ACCENT
+                                    } else {
+                                        theme::TEXT_SECONDARY
+                                    }),
+                            )
                             .fill(if selected {
                                 theme::ACCENT_DIM
                             } else {
@@ -148,12 +148,12 @@ pub fn compact_bar(ctx: &egui::Context, state: &mut AppState) {
                     }
                 }
                 let more_selected =
-                    ![Page::Home, Page::Planner, Page::Timetable].contains(&state.selected_page);
+                    ![Page::Home, Page::Timetable, Page::Assignments].contains(&state.selected_page);
                 columns[3].with_layout(
                     egui::Layout::top_down_justified(egui::Align::Center),
                     |ui| {
                         ui.menu_button(
-                            RichText::new("☰  More").size(14.0).color(if more_selected {
+                            RichText::new("More").size(14.0).color(if more_selected {
                                 theme::ACCENT
                             } else {
                                 theme::TEXT_SECONDARY
@@ -203,7 +203,7 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
     if selected || response.hovered() || response.has_focus() {
         ui.painter().rect_filled(
             rect,
-            6.0,
+            2.0,
             if selected {
                 theme::ACCENT_DIM
             } else {
@@ -211,21 +211,9 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
             },
         );
     }
-    if selected {
-        ui.painter().rect_filled(
-            egui::Rect::from_center_size(
-                egui::pos2(rect.left() + 2.0, rect.center().y),
-                egui::vec2(3.0, 22.0),
-            ),
-            1.5,
-            theme::ACCENT,
-        );
-    }
-    let center = egui::pos2(rect.left() + 23.0, rect.center().y);
-    icon(ui, page, center, color);
     ui.painter().text(
         egui::pos2(
-            rect.left() + 44.0,
+            rect.left() + 12.0,
             rect.top() + if description { 17.0 } else { 19.0 },
         ),
         egui::Align2::LEFT_CENTER,
@@ -238,13 +226,12 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
             Page::Home => "What matters today",
             Page::Planner => "Deadlines & tasks",
             Page::Timetable => "Lessons & rooms",
-            Page::Focus => "Time to concentrate",
             Page::Assignments => "Progress & results",
             Page::Announcements => "News from your school",
             Page::Connection => "Connection & preferences",
         };
         ui.painter().text(
-            egui::pos2(rect.left() + 44.0, rect.top() + 35.0),
+            egui::pos2(rect.left() + 12.0, rect.top() + 35.0),
             egui::Align2::LEFT_CENTER,
             short,
             egui::FontId::proportional(11.0),
@@ -254,77 +241,4 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
     response
         .on_hover_text(page.description())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
-fn icon(ui: &Ui, page: Page, center: egui::Pos2, color: egui::Color32) {
-    let icon = egui::Rect::from_center_size(center, egui::vec2(17.0, 17.0));
-    let stroke = egui::Stroke::new(1.5, color);
-    let p = ui.painter();
-    match page {
-        Page::Home => {
-            p.line_segment([icon.left_center(), icon.center_top()], stroke);
-            p.line_segment([icon.center_top(), icon.right_center()], stroke);
-            p.line_segment([icon.left_center(), icon.left_bottom()], stroke);
-            p.line_segment([icon.right_center(), icon.right_bottom()], stroke);
-            p.line_segment([icon.left_bottom(), icon.right_bottom()], stroke);
-        }
-        Page::Planner => {
-            p.rect_stroke(icon, 3.0, stroke);
-            for y in [-4.0, 1.0, 6.0] {
-                p.line_segment(
-                    [center + egui::vec2(-4.0, y), center + egui::vec2(4.0, y)],
-                    stroke,
-                );
-            }
-        }
-        Page::Assignments => {
-            for (x, height) in [(-6.0, 7.0), (0.0, 12.0), (6.0, 17.0)] {
-                p.line_segment(
-                    [
-                        center + egui::vec2(x, 8.0),
-                        center + egui::vec2(x, 8.0 - height),
-                    ],
-                    egui::Stroke::new(3.0, color),
-                );
-            }
-        }
-        Page::Timetable => {
-            p.rect_stroke(icon, 3.0, stroke);
-            p.line_segment(
-                [
-                    center + egui::vec2(-8.0, -3.0),
-                    center + egui::vec2(8.0, -3.0),
-                ],
-                stroke,
-            );
-            for x in [-4.0, 4.0] {
-                p.line_segment(
-                    [center + egui::vec2(x, -11.0), center + egui::vec2(x, -6.0)],
-                    stroke,
-                );
-            }
-        }
-        Page::Focus => {
-            p.circle_stroke(center, 9.0, stroke);
-            p.line_segment([center, center + egui::vec2(0.0, -5.0)], stroke);
-            p.line_segment([center, center + egui::vec2(4.0, 2.0)], stroke);
-        }
-        Page::Announcements => {
-            p.rect_stroke(icon, 3.0, stroke);
-            p.line_segment([icon.left_top(), center + egui::vec2(0.0, 2.0)], stroke);
-            p.line_segment([icon.right_top(), center + egui::vec2(0.0, 2.0)], stroke);
-        }
-        Page::Connection => {
-            p.circle_stroke(center, 7.0, stroke);
-            p.circle_stroke(center, 2.0, stroke);
-            for angle in 0..8 {
-                let a = angle as f32 * std::f32::consts::TAU / 8.0;
-                let direction = egui::vec2(a.cos(), a.sin());
-                p.line_segment(
-                    [center + direction * 7.0, center + direction * 11.0],
-                    stroke,
-                );
-            }
-        }
-    }
 }

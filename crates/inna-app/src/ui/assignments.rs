@@ -1,6 +1,6 @@
 use crate::ui::theme::*;
 use crate::{
-    grades::{self, GradeSummary, Standing},
+    grades::{self, GradeSummary, GradeView, Standing},
     locale,
     state::AppState,
 };
@@ -29,7 +29,11 @@ pub fn subject(code: &str) -> &str {
             return name;
         }
     }
-    if code.trim().is_empty() || code == "—" { "Unnamed course" } else { code }
+    if code.trim().is_empty() || code == "—" {
+        "Unnamed course"
+    } else {
+        code
+    }
 }
 
 #[cfg(test)]
@@ -43,7 +47,9 @@ fn unknown_subjects_keep_their_course_code() {
 pub fn modules(state: &AppState) -> Vec<AssignmentModule> {
     let mut modules = state.assignments.clone();
     for lesson in &state.timetable {
-        if !lesson.is_lesson() { continue; }
+        if !lesson.is_lesson() {
+            continue;
+        }
         let code = lesson.course_code();
         if code != "—" && !modules.iter().any(|m| m.module_str() == code) {
             modules.push(AssignmentModule {
@@ -73,6 +79,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         "Your grades, their weights, and your progress in each course.",
     );
     let modules = modules(state);
+    grade_view_picker(ui, &mut state.grade_view);
+    let view = state.grade_view;
     let summaries: Vec<_> = modules.iter().map(GradeSummary::for_module).collect();
     ui.horizontal_wrapped(|ui| {
         badge(
@@ -80,23 +88,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             &locale::counted(modules.len(), "course", "courses"),
             ACCENT,
         );
-        let above = summaries
-            .iter()
-            .filter(|s| s.standing() == Standing::Above)
-            .count();
-        let below = summaries
-            .iter()
-            .filter(|s| s.standing() == Standing::Below)
-            .count();
         badge(
             ui,
-            &format!("{} above the pass mark", locale::number(above)),
-            SUCCESS,
-        );
-        badge(
-            ui,
-            &format!("{} below the pass mark", locale::number(below)),
-            ERROR_RED,
+            &format!(
+                "{} with numeric grades",
+                summaries.iter().filter(|s| s.counted > 0).count()
+            ),
+            TEXT_SECONDARY,
         );
     });
     ui.add_space(14.0);
@@ -114,21 +112,22 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         for pair in modules.chunks(2) {
             ui.columns(2, |cols| {
                 for (i, module) in pair.iter().enumerate() {
-                    course_card(&mut cols[i], module);
+                    course_card(&mut cols[i], module, view);
                 }
             });
         }
     } else {
         for module in &modules {
-            course_card(ui, module);
+            course_card(ui, module, view);
         }
     }
     ui.add_space(16.0);
     card().fill(NEXT_HIGHLIGHT).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.label(RichText::new("How is progress calculated?").family(crate::ui::theme::semibold()));
-        ui.label("Average = total grade × weight, divided by the graded weight. Ungraded work does not count as zero; work with zero weight is excluded.");
-        ui.label("Flensborg's general pass mark is a final grade of 5 (45%). This view compares the unrounded average with 4.50. Progress is provisional; individual course requirements may also apply.");
+        ui.label("Graded work = sum of grade × weight ÷ graded weight. Full coursework = sum of grade × weight ÷ 100. For example, an 8 on a test worth 20% gives an 8.00 graded-work average and 1.60 points toward the full course. Zero-weight items are excluded from both.");
+        ui.label("INNA's item weights already include their category contribution. Full coursework always uses 100%, even when INNA has not listed all assessments yet.");
+        ui.label("Flensborg's general pass mark is a final grade of 5 (45%). The scale marker is at 4.50. Full-course standing stays provisional until all 100% has numeric grades. Individual course requirements may also apply.");
         ui.horizontal_wrapped(|ui| {
             ui.hyperlink_to("Flensborg curriculum · page 18", grades::RULES_URL);
             ui.hyperlink_to("Course descriptions at flensborg.is", grades::COURSES_URL);
@@ -136,9 +135,24 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     });
 }
 
-fn course_card(ui: &mut Ui, module: &AssignmentModule) {
+pub fn grade_view_picker(ui: &mut Ui, view: &mut GradeView) {
+    ui.horizontal_wrapped(|ui| {
+        for mode in [GradeView::GradedWork, GradeView::FullCourse] {
+            ui.selectable_value(view, mode, mode.label());
+        }
+    });
+    ui.label(
+        RichText::new(view.description())
+            .size(12.0)
+            .color(TEXT_SECONDARY),
+    );
+    ui.add_space(12.0);
+}
+
+fn course_card(ui: &mut Ui, module: &AssignmentModule, view: GradeView) {
     let summary = GradeSummary::for_module(module);
-    let tint = color(summary.standing());
+    let standing = view.standing(&summary);
+    let tint = color(standing);
     card().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.label(
@@ -148,13 +162,14 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
         );
         ui.label(RichText::new(module.module_str()).size(22.0).family(crate::ui::theme::semibold()));
         ui.add_space(4.0);
-        badge(ui, summary.standing().label(), tint);
+        badge(ui, if view == GradeView::FullCourse && summary.full_course.is_some() && standing == Standing::Unknown {
+            "Course in progress"
+        } else { standing.label() }, tint);
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(
-                    summary
-                        .average
+                    view.value(&summary)
                         .map(grades::average_text)
                         .unwrap_or_else(|| "—".into()),
                 )
@@ -165,7 +180,9 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
             ui.label(RichText::new("/ 10").size(18.0).color(TEXT_DIM));
         });
         ui.label(
-            RichText::new(if summary.incomplete() {
+            RichText::new(if view == GradeView::FullCourse {
+                "Earned toward full course"
+            } else if summary.incomplete() {
                 "Average of known weights"
             } else {
                 "Current weighted average"
@@ -173,14 +190,15 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
             .size(13.0)
             .color(TEXT_SECONDARY),
         );
-        if let Some(average) = summary.average {
+        if let Some(average) = view.value(&summary) {
             ui.add_space(10.0);
             grade_scale(ui, average, tint);
             ui.add_space(4.0);
             ui.label(
                 RichText::new(format!(
-                    "Graded weight: {}% · {} items",
+                    "{}% graded · {}% listed · {} items counted",
                     locale::decimal(summary.graded_weight, 1),
+                    locale::decimal(summary.listed_weight, 1),
                     locale::number(summary.counted)
                 ))
                 .size(13.0)
@@ -189,18 +207,23 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule) {
         }
         if let Some(note) = summary.explanation() {
             ui.add_space(6.0);
+            let note = if view == GradeView::FullCourse && summary.incomplete() {
+                "Some grades have missing weights or are nonnumeric. Only numeric grades with known positive weights contribute; earned points are incomplete."
+            } else { note };
             ui.label(RichText::new(note).size(13.0).color(WARNING));
+        }
+        if view == GradeView::FullCourse && summary.listed_weight < 100.0 - 1e-6 {
+            ui.label(RichText::new("INNA has not supplied a complete 100% assessment plan. Only known earned points are shown.").size(13.0).color(TEXT_SECONDARY));
         }
         ui.add_space(8.0);
         for (name, category) in grades::categories(module) {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(name).size(13.0).family(crate::ui::theme::semibold()));
-                let average = category
-                    .average
+                let average = view.value(&category)
                     .map(grades::average_text)
                     .unwrap_or_else(|| "—".into());
                 ui.label(
-                    RichText::new(format!("{average} / 10"))
+                    RichText::new(format!("{average} / 10{}", if view == GradeView::FullCourse { " toward course" } else { "" }))
                         .size(13.0)
                         .color(ACCENT),
                 );

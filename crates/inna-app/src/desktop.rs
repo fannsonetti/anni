@@ -348,7 +348,7 @@ impl Desktop {
 
         section(ui, "Assignments", |ui| {
             setting_check(ui, "Exams (Próf)", &mut settings.include_exams);
-            setting_check(ui, "Personal tasks and INNA reminders", &mut settings.include_reminders);
+            setting_check(ui, "INNA reminders", &mut settings.include_reminders);
             setting_check(ui, "Course codes", &mut settings.show_course_codes);
             setting_check(ui, "Deadlines", &mut settings.show_deadlines);
             hint(ui, "Click an assignment on the desktop to cross it off. It hides a day later; click it again to undo.");

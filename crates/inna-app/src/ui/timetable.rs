@@ -52,9 +52,21 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     );
     ui.add_space(12.0);
     for event in state.timetable.iter().filter(|entry| !entry.is_lesson()) {
-        if let Some(date) = event.start.as_deref().and_then(planner::parse_deadline).map(|date| date.at.date()) {
+        if let Some(date) = event
+            .start
+            .as_deref()
+            .and_then(planner::parse_deadline)
+            .map(|date| date.at.date())
+        {
             if date >= monday && date <= sunday {
-                ui.label(RichText::new(format!("{} · {} · School calendar", locale::short_date(date), event.course_code())).color(TEXT_SECONDARY));
+                ui.label(
+                    RichText::new(format!(
+                        "{} · {} · School calendar",
+                        locale::short_date(date),
+                        event.course_code()
+                    ))
+                    .color(TEXT_SECONDARY),
+                );
             }
         }
     }
@@ -87,7 +99,7 @@ fn day_button(ui: &mut Ui, state: &mut AppState, date: NaiveDate, width: f32, he
     let p = ui.painter();
     p.rect_filled(
         rect,
-        9.0,
+        2.0,
         if selected {
             ACCENT_DIM
         } else if response.hovered() {
@@ -97,7 +109,7 @@ fn day_button(ui: &mut Ui, state: &mut AppState, date: NaiveDate, width: f32, he
         },
     );
     if selected {
-        p.rect_stroke(rect, 9.0, Stroke::new(1.0, ACCENT));
+        p.rect_stroke(rect, 2.0, Stroke::new(1.0, ACCENT));
     }
     let weekday = &locale::weekday(date)[..3];
     p.text(
@@ -138,10 +150,10 @@ fn course_color(code: &str) -> Color32 {
     let colors = [
         ACCENT,
         VIOLET,
-        Color32::from_rgb(135, 191, 247),
+        Color32::from_gray(190),
         WARNING,
-        Color32::from_rgb(239, 163, 183),
-        Color32::from_rgb(151, 204, 151),
+        Color32::from_gray(165),
+        Color32::from_gray(210),
     ];
     let hash = code
         .chars()
@@ -272,7 +284,7 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
         let x = rect.left() + gutter + day as f32 * (width + gap);
         p.rect_filled(
             egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(width, height)),
-            8.0,
+            2.0,
             PANEL_BG,
         );
     }
@@ -334,21 +346,13 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
                 .zip(entry.end.as_deref().and_then(planner::parse_deadline))
                 .is_some_and(|(s, e)| s.at <= now && now < e.at);
             let next = next_start.is_some() && entry.start == next_start;
-            p.rect_filled(
-                r,
-                6.0,
-                color.linear_multiply(if current { 0.22 } else { 0.12 }),
-            );
+            p.rect_filled(r, 2.0, if current { NOW_HIGHLIGHT } else { CONTROL });
             p.rect_stroke(
                 r,
-                6.0,
+                2.0,
                 Stroke::new(
                     if current { 1.5 } else { 0.7 },
-                    if current {
-                        color
-                    } else {
-                        color.linear_multiply(0.3)
-                    },
+                    if current { color } else { BORDER },
                 ),
             );
             p.rect_filled(

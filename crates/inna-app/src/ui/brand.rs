@@ -1,41 +1,15 @@
 //! The same monogram is used in the planner, native windows, and Windows resources.
 use super::theme::TEXT_PRIMARY;
-use egui::{RichText, Sense, Ui, Vec2};
+use egui::{RichText, Sense, Ui};
 use std::sync::OnceLock;
 
 pub const NAME: &str = "anni";
 
 pub fn wordmark(ui: &mut Ui, compact: bool) -> egui::Response {
-    let size = if compact { 30.0 } else { 36.0 };
     ui.horizontal(|ui| {
-        let texture_id = ui.id().with("anni_brand_texture");
-        let texture = ui
-            .ctx()
-            .data(|data| data.get_temp::<egui::TextureHandle>(texture_id))
-            .unwrap_or_else(|| {
-                let icon = icon();
-                let texture = ui.ctx().load_texture(
-                    "anni",
-                    egui::ColorImage::from_rgba_unmultiplied(
-                        [icon.width as usize, icon.height as usize],
-                        &icon.rgba,
-                    ),
-                    egui::TextureOptions::LINEAR,
-                );
-                ui.ctx()
-                    .data_mut(|data| data.insert_temp(texture_id, texture.clone()));
-                texture
-            });
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-        ui.painter().image(
-            texture.id(),
-            rect,
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
         ui.label(
             RichText::new(NAME)
-                .size(26.0)
+                .size(if compact { 22.0 } else { 26.0 })
                 .family(crate::ui::theme::semibold())
                 .color(TEXT_PRIMARY),
         );

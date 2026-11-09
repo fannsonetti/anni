@@ -200,7 +200,7 @@ pub fn show(ctx: &egui::Context, shared: std::sync::Arc<std::sync::Mutex<crate::
                 } else {
                     (60 - now.second() as u64) * 1000 - now.timestamp_subsec_millis() as u64
                 };
-                // A clock-only desktop still services focus, sync, and saved data.
+                // A clock-only desktop still services sync and saved data.
                 ctx.request_repaint_after(std::time::Duration::from_millis(delay.min(15_000)));
             },
         );
@@ -607,7 +607,7 @@ fn homework_items(
         .filter(|item| match item.kind {
             WorkKind::Assignment | WorkKind::Homework => true,
             WorkKind::Exam => settings.include_exams,
-            WorkKind::Personal | WorkKind::InnaTask => settings.include_reminders,
+            WorkKind::InnaTask => settings.include_reminders,
         })
         .collect::<Vec<_>>();
     // Ticked rows stay where they are, so a second click undoes the same one.
@@ -1022,7 +1022,8 @@ fn paint_segments(
 pub fn planner_progress(ui: &mut egui::Ui, state: &AppState) {
     let now = Utc::now().naive_utc();
     let day = DayState::compute(&state.timetable, now);
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 66.0), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 66.0), Sense::hover());
+    response.on_hover_text("Based on your saved INNA timetable, using Icelandic time. Day progress runs from the first class start to the last class end, including breaks. Each segment is a class; thinner segments show breaks of 15 minutes or more. The countdown shows time left in this class or until the next one. Before school it counts down to the first class; afterward it shows School's out. Days without classes preview the next saved school day.");
     paint_progress(
         ui.painter(),
         rect,
@@ -1180,10 +1181,10 @@ mod tests {
             let ctx = egui::Context::default();
             crate::ui::theme::apply_theme(&ctx);
             let mut state = AppState::new();
-            state
-                .planner
-                .add("Sample homework for selection", "", "")
-                .unwrap();
+            state.homework = serde_json::from_value(serde_json::json!([
+                {"id": 1, "title": "Sample homework for selection"}
+            ]))
+            .unwrap();
             state.timetable = crate::mock::mock_timetable();
             let settings = DesktopSettings {
                 include_reminders: true,
@@ -1272,7 +1273,6 @@ mod tests {
         state.assignments = crate::mock::mock_assignments();
         state.homework = crate::mock::mock_homework();
         state.todo_items = crate::mock::mock_todo();
-        state.planner.add("Personal", "", "").unwrap();
         let settings = DesktopSettings::default();
         let now = Utc::now().naive_utc();
         let homework = homework_items(&state, &settings, now);
@@ -1386,11 +1386,13 @@ mod tests {
     #[test]
     fn desktop_queue_keeps_all_deadlines_and_undated_work_but_hides_completed_work() {
         let mut state = AppState::new();
-        state.planner.add("Later", "", "19.10.2026").unwrap();
-        state.planner.add("Overdue", "", "17.10.2026").unwrap();
-        state.planner.add("No deadline", "", "").unwrap();
-        state.planner.add("Done", "", "16.10.2026").unwrap();
-        state.planner.set_done("personal:4", true);
+        state.todo_items = serde_json::from_value(serde_json::json!([
+            {"id":1,"name":"Later","dueDate":"19.10.2026"},
+            {"id":2,"name":"Overdue","dueDate":"17.10.2026"},
+            {"id":3,"name":"No deadline"},
+            {"id":4,"name":"Done","dueDate":"16.10.2026","done":true}
+        ]))
+        .unwrap();
         assert_eq!(
             open_work(&state)
                 .iter()
@@ -1398,7 +1400,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["Overdue", "Later", "No deadline"]
         );
-        state.planner.set_done("personal:2", true);
+        let overdue = open_work(&state)[0].clone();
+        overdue.set_done(&mut state.planner, true);
         assert_eq!(open_work(&state).len(), 2);
     }
     #[test]

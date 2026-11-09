@@ -1,38 +1,42 @@
 use egui::{Color32, FontId, Rounding, Stroke, TextStyle, Visuals};
 
-// Hermes' Navy theme (Core/Themes.cs).
-pub const BG_DARK: Color32 = Color32::from_rgb(0x0E, 0x1A, 0x2E);
-pub const PANEL_BG: Color32 = Color32::from_rgb(0x12, 0x20, 0x36);
-pub const CARD_BG: Color32 = Color32::from_rgb(0x16, 0x25, 0x3D);
-pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(239, 246, 255);
-pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(170, 184, 204);
-pub const TEXT_DIM: Color32 = Color32::from_rgb(137, 152, 173);
-pub const ACCENT: Color32 = Color32::from_rgb(0x7D, 0xB8, 0xFF);
-pub const ACCENT_TEXT: Color32 = Color32::from_rgb(0x0E, 0x1A, 0x2E);
-pub const ACCENT_DIM: Color32 = Color32::from_rgb(0x1E, 0x2E, 0x4A);
-pub const VIOLET: Color32 = Color32::from_rgb(0xC9, 0xA2, 0xFF);
-pub const WARNING: Color32 = Color32::from_rgb(0xFF, 0xA9, 0x4D);
-pub const ERROR_RED: Color32 = Color32::from_rgb(0xFF, 0x6B, 0x6B);
-pub const SUCCESS: Color32 = Color32::from_rgb(0x7B, 0xE0, 0xA6);
-pub const NOW_HIGHLIGHT: Color32 = Color32::from_rgb(0x1B, 0x33, 0x55);
-pub const NEXT_HIGHLIGHT: Color32 = Color32::from_rgb(0x1A, 0x2A, 0x45);
-pub const BORDER: Color32 = Color32::from_rgb(0x22, 0x38, 0x5A);
-pub const CONTROL: Color32 = Color32::from_rgb(0x1E, 0x2E, 0x4A);
-pub const CONTROL_BORDER: Color32 = Color32::from_rgb(0x2E, 0x4A, 0x72);
-pub const NAV_BG: Color32 = Color32::from_rgb(0x0B, 0x15, 0x26);
+// A neutral palette: hierarchy comes from spacing, type, and explicit status labels.
+pub const BG_DARK: Color32 = Color32::from_gray(16);
+pub const PANEL_BG: Color32 = Color32::from_gray(22);
+pub const CARD_BG: Color32 = Color32::from_gray(20);
+pub const TEXT_PRIMARY: Color32 = Color32::from_gray(240);
+pub const TEXT_SECONDARY: Color32 = Color32::from_gray(175);
+pub const TEXT_DIM: Color32 = Color32::from_gray(145);
+pub const ACCENT: Color32 = Color32::from_gray(240);
+pub const ACCENT_TEXT: Color32 = Color32::from_gray(16);
+pub const ACCENT_DIM: Color32 = Color32::from_gray(36);
+pub const VIOLET: Color32 = TEXT_SECONDARY;
+pub const WARNING: Color32 = TEXT_PRIMARY;
+pub const ERROR_RED: Color32 = TEXT_PRIMARY;
+pub const SUCCESS: Color32 = TEXT_SECONDARY;
+pub const NOW_HIGHLIGHT: Color32 = Color32::from_gray(27);
+pub const NEXT_HIGHLIGHT: Color32 = Color32::from_gray(24);
+pub const BORDER: Color32 = Color32::from_gray(43);
+pub const CONTROL: Color32 = Color32::from_gray(28);
+pub const CONTROL_BORDER: Color32 = Color32::from_gray(65);
+pub const NAV_BG: Color32 = BG_DARK;
 
 pub fn primary_button(text: &str) -> egui::Button<'_> {
-    egui::Button::new(egui::RichText::new(text).family(semibold()).color(ACCENT_TEXT))
-        .fill(ACCENT)
-        .stroke(Stroke::NONE)
+    egui::Button::new(
+        egui::RichText::new(text)
+            .family(semibold())
+            .color(ACCENT_TEXT),
+    )
+    .fill(ACCENT)
+    .stroke(Stroke::NONE)
 }
 
-/// Hermes' card: 8 px corners, 18x14 padding, 12 px between cards.
+/// Quiet surfaces with a fine border and minimal rounding.
 pub fn card() -> egui::Frame {
     egui::Frame::none()
         .fill(CARD_BG)
         .stroke(Stroke::new(1.0, BORDER))
-        .rounding(8.0)
+        .rounding(2.0)
         .inner_margin(egui::Margin::symmetric(18.0, 14.0))
         .outer_margin(egui::Margin {
             bottom: 12.0,
@@ -44,7 +48,7 @@ pub fn semibold() -> egui::FontFamily {
     egui::FontFamily::Name("desktop_strong".into())
 }
 
-/// A settings card with Hermes' title.
+/// A settings section with a simple title.
 pub fn section<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     card()
         .show(ui, |ui| {
@@ -65,14 +69,11 @@ pub fn section<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui
 pub fn setting_row(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.label(label);
-        ui.with_layout(
-            egui::Layout::right_to_left(egui::Align::Center),
-            |ui| {
-                ui.set_max_width(210.0);
-                ui.spacing_mut().slider_width = 130.0;
-                add(ui);
-            },
-        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.set_max_width(210.0);
+            ui.spacing_mut().slider_width = 130.0;
+            add(ui);
+        });
     });
     ui.add_space(4.0);
 }
@@ -89,11 +90,14 @@ pub fn hint(ui: &mut egui::Ui, text: &str) {
 
 pub fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
     egui::Frame::none()
-        .fill(color.linear_multiply(0.12))
-        .rounding(20.0)
-        .inner_margin(egui::Margin::symmetric(10.0, 5.0))
+        .inner_margin(egui::Margin::symmetric(0.0, 3.0))
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(text).size(12.0).family(semibold()).color(color));
+            ui.label(
+                egui::RichText::new(text)
+                    .size(12.0)
+                    .family(semibold())
+                    .color(color),
+            );
         });
 }
 
@@ -137,9 +141,10 @@ pub fn apply_theme(ctx: &egui::Context) {
             .insert("segoe_semibold".into(), egui::FontData::from_owned(data));
         strong_fonts.insert(0, "segoe_semibold".into());
     }
-    fonts
-        .families
-        .insert(egui::FontFamily::Name("desktop_strong".into()), strong_fonts);
+    fonts.families.insert(
+        egui::FontFamily::Name("desktop_strong".into()),
+        strong_fonts,
+    );
     #[cfg(windows)]
     if let Ok(data) = std::fs::read("C:/Windows/Fonts/segoeuil.ttf") {
         fonts
@@ -190,8 +195,10 @@ pub fn apply_theme(ctx: &egui::Context) {
     visuals.faint_bg_color = PANEL_BG;
     visuals.extreme_bg_color = BG_DARK;
     visuals.window_stroke = Stroke::new(1.0, BORDER);
-    visuals.window_rounding = Rounding::same(8.0);
-    visuals.menu_rounding = Rounding::same(8.0);
+    visuals.window_rounding = Rounding::same(2.0);
+    visuals.menu_rounding = Rounding::same(2.0);
+    visuals.window_shadow = egui::epaint::Shadow::NONE;
+    visuals.popup_shadow = egui::epaint::Shadow::NONE;
     visuals.warn_fg_color = WARNING;
     visuals.error_fg_color = ERROR_RED;
     visuals.override_text_color = Some(TEXT_PRIMARY);
@@ -213,7 +220,8 @@ pub fn apply_theme(ctx: &egui::Context) {
         &mut visuals.widgets.hovered,
         &mut visuals.widgets.active,
     ] {
-        widget.rounding = Rounding::same(4.0);
+        widget.rounding = Rounding::same(2.0);
+        widget.expansion = 0.0;
         widget.fg_stroke = Stroke::new(1.0, TEXT_PRIMARY);
     }
     style.visuals = visuals;

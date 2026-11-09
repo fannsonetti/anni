@@ -69,7 +69,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
         }
         if state.connection != ConnectionState::MockMode {
             ui.collapsing("Forget sign-in or change account", |ui| {
-                ui.label("This signs Anni out and removes the login remembered in its sign-in window, including Google. Your schoolwork and personal plan are kept. Your normal browser is unaffected.");
+                ui.label("This signs Anni out and removes the login remembered in its sign-in window, including Google. Your schoolwork and checkmarks are kept. Your normal browser is unaffected.");
                 if ui.add_enabled(!state.refreshing && state.connection != ConnectionState::Authenticating, egui::Button::new("Forget remembered sign-in")).clicked() { action = ConnectionAction::ForgetSignIn; }
             });
         }
@@ -77,12 +77,12 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
     card().show(ui,|ui| {
         ui.set_min_width(ui.available_width());
         ui.label(RichText::new("Saved data").size(15.0).family(crate::ui::theme::semibold()));
-        ui.label("Anni is an independent, unofficial app. Personal tasks and checkmarks are saved on this device, with a separate plan for each INNA account.");
+        ui.label("Anni is an independent, unofficial app. Schoolwork checkmarks are saved on this device, separately for each INNA account.");
         ui.add_space(10.0);
         if ui.add_enabled(!state.refreshing,egui::Button::new(RichText::new("Clear downloaded INNA data").color(WARNING))).clicked(){
             state.timetable.clear();state.announcements.clear();state.assignments.clear();state.homework.clear();state.todo_items.clear();state.last_sync.clear();state.sync_errors.clear();state.storage_dirty=true;
         }
-        ui.label(RichText::new("Your personal tasks and checkmarks are kept. INNA data downloads again on the next refresh.").size(13.0).color(TEXT_SECONDARY));
+        ui.label(RichText::new("Your schoolwork checkmarks are kept. INNA data downloads again on the next refresh.").size(13.0).color(TEXT_SECONDARY));
     });
     card().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
