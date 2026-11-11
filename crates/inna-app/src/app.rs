@@ -488,11 +488,13 @@ impl AppData {
             );
         }
         if ctx.input(|i| i.viewport().close_requested()) && !self.desktop.quit_requested {
-            self.desktop.handle(
-                crate::desktop::DesktopAction::Quit,
-                ctx,
-                &mut self.state,
-            );
+            let action = if crate::desktop_platform::take_user_close() && self.desktop.settings.enabled {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                crate::desktop::DesktopAction::HidePlanner
+            } else {
+                crate::desktop::DesktopAction::Quit
+            };
+            self.desktop.handle(action, ctx, &mut self.state);
         }
         ctx.set_theme(egui::ThemePreference::Dark);
         self.service(ctx);
@@ -631,7 +633,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     #[ignore = "opens temporary mock windows; run separately with --ignored --test-threads=1"]
-    fn native_close_button_exits_with_widgets_enabled() {
+    fn native_close_button_hides_planner_and_external_close_quits() {
         native_lifecycle(true);
     }
 
@@ -695,26 +697,26 @@ mod tests {
                             app.finish_update(ctx);
                             progress.stage = 2;
                         } else if progress.stage == 2 && elapsed.as_secs_f32() >= 1.5 {
-                            if close_button {
-                                app.desktop.planner_hidden = false;
-                                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Visible(true));
-                                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
-                                progress.stage = 3;
-                            } else {
                             let AppData { state, desktop, .. } = &mut *app;
                             desktop.handle(DesktopAction::Quit, ctx, state);
                             app.finish_update(ctx);
                             progress.stage = 4;
-                            }
                         } else if progress.stage == 3 && elapsed.as_secs_f32() >= 2.0 {
                             assert!(root_visible());
                             let title: Vec<u16> = TITLE.encode_utf16().chain(Some(0)).collect();
                             unsafe {
                                 use windows_sys::Win32::UI::WindowsAndMessaging::*;
                                 let root = FindWindowW(std::ptr::null(), title.as_ptr());
-                                PostMessageW(root, WM_CLOSE, 0, 0);
+                                assert_ne!(PostMessageW(root, WM_SYSCOMMAND, SC_CLOSE as usize, 0), 0);
                             }
                             progress.stage = 4;
+                        } else if close_button && progress.stage == 4 && elapsed.as_secs_f32() >= 2.5 {
+                            assert!(app.desktop.planner_hidden);
+                            assert!(!root_visible(), "Close button left the planner visible");
+                            assert!(app.desktop.settings.enabled);
+                            assert!(!app.desktop.quit_requested);
+                            crate::desktop_platform::close_planner();
+                            progress.stage = 5;
                         } else if elapsed.as_secs() >= 5 {
                             progress.timed_out = true;
                             ctx.send_viewport_cmd_to(
@@ -736,7 +738,10 @@ mod tests {
                 );
             }
         }
-        let progress = Arc::new(Mutex::new(Progress::default()));
+        let progress = Arc::new(Mutex::new(Progress {
+            stage: if close_button { 3 } else { 0 },
+            ..Default::default()
+        }));
         let result = progress.clone();
         let options = eframe::NativeOptions {
             persist_window: false,
@@ -753,8 +758,12 @@ mod tests {
             TITLE,
             options,
             Box::new(move |cc| {
+                let app = AnniApp::new(cc, true, !close_button);
+                if close_button {
+                    app.shared.lock().unwrap().desktop.settings.enabled = true;
+                }
                 Ok(Box::new(Harness {
-                    app: AnniApp::new(cc, true, true),
+                    app,
                     progress,
                     started: Instant::now(),
                     close_button,
@@ -763,7 +772,7 @@ mod tests {
         )
         .unwrap();
         let progress = result.lock().unwrap();
-        assert_eq!(progress.stage, 4);
+        assert_eq!(progress.stage, if close_button { 5 } else { 4 });
         assert!(
             !progress.timed_out,
             "Quit needed a visible planner to finish"
