@@ -34,8 +34,9 @@
     if (!silent || !["nam.inna.is", "r.inna.is"].includes(location.hostname)) return;
     const resume = () => {
         // Use INNA's own Google button, retaining any callback parameters in its link.
-        const button = document.querySelector(".btn-opacity-google");
-        if (!button || !button.getClientRects().length) return;
+        // INNA renders a hidden duplicate for its other layout; use the visible button.
+        const button = [...document.querySelectorAll(".btn-opacity-google")].find(b => b.getClientRects().length);
+        if (!button) return;
         try {
             if (sessionStorage.getItem("anni.googleResumeStarted")) return;
             sessionStorage.setItem("anni.googleResumeStarted", "true");

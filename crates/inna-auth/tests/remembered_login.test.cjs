@@ -16,13 +16,14 @@ function page({ host = 'accounts.google.com', silent = true, previous, emails = 
         click() { clicks.push(email); listeners.click?.({ target: this }); },
     }));
     const link = { click: () => clicks.push('google-link-with-callback') };
+    const hidden = { getClientRects: () => [], querySelector: () => ({ click: () => clicks.push("hidden-button") }) };
     const button = { getClientRects: () => [1], querySelector: () => link };
     const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
     const window = {};
     window.top = frame ? {} : window;
     vm.runInNewContext(source.replace('__ANNI_SILENT__', String(silent)), {
         window, location: { hostname: host, protocol },
-        document: { addEventListener: (type, handler) => listeners[type] = handler, querySelectorAll: () => rows, querySelector: () => button },
+        document: { addEventListener: (type, handler) => listeners[type] = handler, querySelectorAll: selector => selector === ".btn-opacity-google" ? [hidden, button] : rows },
         localStorage: storage, sessionStorage: storage, setInterval: callback => timers.push(callback),
     });
     return { clicks, values, rows, tick: () => timers.forEach(callback => callback()) };
