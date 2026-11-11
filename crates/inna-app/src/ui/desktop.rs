@@ -4,7 +4,7 @@ use crate::{
     desktop::DesktopAction,
     desktop_platform as platform, locale,
     planner::{self, WorkItem, WorkKind},
-    settings::{ClockStyle, DesktopSettings, DesktopSide},
+    settings::{ClockStyle, DesktopSettings, DesktopSide, WorkTab},
     state::AppState,
 };
 use chrono::{Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
@@ -23,6 +23,10 @@ const PT: f32 = 96.0 / 72.0;
 const SMALL: f32 = 11.0 * PT;
 const ITEM: f32 = 13.0 * PT;
 const CURRENT: f32 = 15.0 * PT;
+/// Seconds for the work list to fade out, and again to fade back in, on a tab switch.
+const TAB_FADE: f32 = 0.12;
+/// Seconds for the tab underline to glide to the chosen tab.
+const TAB_SLIDE: f32 = 0.2;
 
 fn tint(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
@@ -347,7 +351,14 @@ fn dot(p: &Painter, center: Pos2, radius: f32, color: Color32, strength: f32) {
 }
 
 /// Hermes' lists sit centered in their part; a long list starts at the top and scrolls.
-fn list(ui: &mut egui::Ui, body: Rect, id: &str, height: f32, add: impl FnOnce(&mut egui::Ui)) {
+/// `height` is the content's full height (see `stacked`); `None` keeps it at the top.
+fn list(
+    ui: &mut egui::Ui,
+    body: Rect,
+    id: impl std::hash::Hash,
+    height: Option<f32>,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     ui.allocate_new_ui(UiBuilder::new().max_rect(body), |ui| {
         ui.set_clip_rect(body.intersect(ui.clip_rect()));
         egui::ScrollArea::vertical()
@@ -356,10 +367,25 @@ fn list(ui: &mut egui::Ui, body: Rect, id: &str, height: f32, add: impl FnOnce(&
             .auto_shrink([false, false])
             .max_height(body.height())
             .show(ui, |ui| {
-                ui.add_space(((body.height() - height) * 0.5).max(0.0));
+                if let Some(height) = height {
+                    ui.add_space(((body.height() - height) * 0.5).max(0.0));
+                }
                 add(ui);
             });
     });
+}
+
+/// Height of `rows` stacked allocations of `height` in total, with egui's gaps between them.
+fn stacked(ui: &egui::Ui, height: f32, rows: usize) -> f32 {
+    height + ui.spacing().item_spacing.y * rows.saturating_sub(1) as f32
+}
+
+/// Which tab of the work panel an item belongs to.
+fn in_tab(tab: WorkTab, kind: WorkKind) -> bool {
+    match tab {
+        WorkTab::Assignments => matches!(kind, WorkKind::Assignment | WorkKind::Exam),
+        WorkTab::Homework => matches!(kind, WorkKind::Homework | WorkKind::InnaTask),
+    }
 }
 
 struct WorkRow {
@@ -449,7 +475,7 @@ fn work_row(
 fn work_content(
     ctx: &egui::Context,
     state: &mut AppState,
-    settings: &DesktopSettings,
+    settings: &mut DesktopSettings,
 ) -> DesktopAction {
     let mut action = DesktopAction::None;
     position(ctx, layout(platform::work_area(), settings).work);
@@ -462,45 +488,131 @@ fn work_content(
             let body = panel_content(ui, settings);
             let scale = text_scale(settings);
             let palette = settings.theme.palette();
+            let accent = settings.accent_color();
             let right = settings.side == DesktopSide::Right;
             let now = Utc::now().naive_utc();
-            let items = homework_items(state, settings, now);
+            // The highlight follows a click at once; the list fades out, swaps, and fades in.
+            let selected = settings.work_tab;
+            let ctx = ui.ctx().clone();
+            let shown_id = egui::Id::new("desktop_work_shown_tab");
+            let fade_id = egui::Id::new("desktop_work_fade");
+            let mut tab = ctx.data_mut(|d| *d.get_temp_mut_or(shown_id, selected));
+            let mut fade = ctx.animate_bool_with_time(fade_id, tab == selected, TAB_FADE);
+            if tab != selected && fade <= 0.0 {
+                tab = selected;
+                ctx.data_mut(|d| d.insert_temp(shown_id, tab));
+                fade = ctx.animate_bool_with_time(fade_id, true, TAB_FADE);
+            }
+            let mut items = homework_items(state, settings, now);
+            let counts = WorkTab::ALL.map(|each| {
+                items
+                    .iter()
+                    .filter(|item| in_tab(each, item.kind) && !item.done)
+                    .count()
+            });
+            items.retain(|item| in_tab(tab, item.kind));
             let dot_space = 20.0 * scale;
             let width = (body.width() - dot_space - 16.0).max(40.0);
+            let edge = |rect: Rect| if right { rect.right() } else { rect.left() };
+            let inward = if right { -1.0 } else { 1.0 };
+            let anchor = if right {
+                Align2::RIGHT_TOP
+            } else {
+                Align2::LEFT_TOP
+            };
+            let mut clickable = Vec::new();
+
+            // The tabs stay put above the list, so switching never makes them jump.
+            let tabs: Vec<_> = WorkTab::ALL
+                .into_iter()
+                .zip(counts)
+                .map(|(each, count)| {
+                    let active = each == selected;
+                    let color = palette
+                        .text
+                        .gamma_multiply(if active { 0.95 } else { 0.5 });
+                    let font = if active {
+                        strong(SMALL * scale)
+                    } else {
+                        FontId::proportional(SMALL * scale)
+                    };
+                    let mut label = job(f32::INFINITY, false);
+                    label.append(each.label(), 0.0, plain(font, color));
+                    if count > 0 {
+                        label.append(
+                            &count.to_string(),
+                            5.0 * scale,
+                            plain(
+                                FontId::proportional(SMALL * 0.85 * scale),
+                                color.gamma_multiply(0.75),
+                            ),
+                        );
+                    }
+                    (each, active, ui.fonts(|fonts| fonts.layout_job(label)))
+                })
+                .collect();
+            let gap = 16.0 * scale;
+            let tabs_width = tabs.iter().map(|(_, _, g)| g.size().x).sum::<f32>()
+                + gap * tabs.len().saturating_sub(1) as f32;
+            let label_height = tabs
+                .iter()
+                .map(|(_, _, g)| g.size().y)
+                .fold(0.0, f32::max);
+            let mut x = edge(body) + inward * dot_space - if right { tabs_width } else { 0.0 };
+            let mut underline = None;
+            for (each, active, galley) in &tabs {
+                let rect = Rect::from_min_size(pos2(x, body.top()), galley.size());
+                shadowed(ui.painter(), rect.min, galley, 1.0);
+                if *active {
+                    underline = Some(rect);
+                }
+                let hit = rect.expand2(vec2(gap * 0.5, 6.0 * scale));
+                let response = ui
+                    .interact(hit, ui.id().with(("work_tab", each.label())), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if response.clicked() && settings.work_tab != *each {
+                    settings.work_tab = *each;
+                    // The widget otherwise waits up to 15 s for its next paint.
+                    ctx.request_repaint();
+                }
+                clickable.push(hit.intersect(ui.clip_rect()));
+                x += galley.size().x + gap;
+            }
+            if let Some(rect) = underline {
+                // The underline glides to the chosen tab.
+                let left = ctx.animate_value_with_time(
+                    egui::Id::new("desktop_work_underline_left"),
+                    rect.left(),
+                    TAB_SLIDE,
+                );
+                let right_end = ctx.animate_value_with_time(
+                    egui::Id::new("desktop_work_underline_right"),
+                    rect.right(),
+                    TAB_SLIDE,
+                );
+                let y = rect.bottom() + 4.0 * scale;
+                ui.painter().hline(
+                    left..=right_end,
+                    y,
+                    Stroke::new(2.0 * scale + 2.0, Color32::from_black_alpha(40)),
+                );
+                ui.painter()
+                    .hline(left..=right_end, y, Stroke::new(2.0 * scale, accent));
+            }
+            let mut body = body;
+            body.min.y += label_height + 18.0 * scale;
+
             let rows: Vec<_> = items
                 .iter()
                 .map(|item| work_row(ui, item, now, settings, width, right))
                 .collect();
-            let heading_height = SMALL * scale * 1.4 + 8.0;
-            let empty_height = if rows.is_empty() {
-                ITEM * scale * 1.4
-            } else {
-                0.0
-            };
-            let height =
-                heading_height + empty_height + rows.iter().map(|row| row.height).sum::<f32>();
-            let mut clickable = Vec::new();
+            let empty_height = ITEM * scale * 1.4;
             let mut clicked = None;
-            list(ui, body, "desktop_work_list", height, |ui| {
-                let (rect, _) = ui.allocate_exact_size(
-                    vec2(ui.available_width(), heading_height),
-                    Sense::hover(),
-                );
-                let edge = |rect: Rect| if right { rect.right() } else { rect.left() };
-                let inward = if right { -1.0 } else { 1.0 };
-                let anchor = if right {
-                    Align2::RIGHT_TOP
-                } else {
-                    Align2::LEFT_TOP
-                };
-                shadowed_text(
-                    ui.painter(),
-                    pos2(edge(rect) + inward * dot_space, rect.top()),
-                    anchor,
-                    "Assignments",
-                    strong(SMALL * scale),
-                    palette.text.gamma_multiply(0.75),
-                );
+            // Each tab keeps its own scroll position.
+            list(ui, body, ("desktop_work_list", tab.label()), None, |ui| {
+                ui.multiply_opacity(fade);
+                // A small drop as it fades in.
+                ui.add_space((1.0 - fade) * 6.0 * scale);
                 if rows.is_empty() {
                     let (rect, _) = ui.allocate_exact_size(
                         vec2(ui.available_width(), empty_height),
@@ -510,7 +622,10 @@ fn work_content(
                         ui.painter(),
                         pos2(edge(rect) + inward * dot_space, rect.top()),
                         anchor,
-                        "Nothing due",
+                        match tab {
+                            WorkTab::Assignments => "Nothing due",
+                            WorkTab::Homework => "No homework",
+                        },
                         FontId::proportional(ITEM * scale),
                         palette.text.gamma_multiply(0.7),
                     );
@@ -824,11 +939,17 @@ fn schedule_content(
             } else {
                 0.0
             };
-            let height = header_height
-                + empty_height
-                + footer_height
-                + lines.iter().map(|line| line.6).sum::<f32>();
-            list(ui, body, "desktop_schedule_list", height, |ui| {
+            let allocations =
+                1 + usize::from(lines.is_empty()) + lines.len() + usize::from(updated.is_some());
+            let height = stacked(
+                ui,
+                header_height
+                    + empty_height
+                    + footer_height
+                    + lines.iter().map(|line| line.6).sum::<f32>(),
+                allocations,
+            );
+            list(ui, body, "desktop_schedule_list", Some(height), |ui| {
                 let (rect, _) = ui
                     .allocate_exact_size(vec2(ui.available_width(), header_height), Sense::hover());
                 shadowed_text(
@@ -1200,7 +1321,7 @@ mod tests {
                     |ctx| {
                         let action = if homework {
                             // Row clicks are covered by the tick test below.
-                            work_content(ctx, &mut AppState::new(), &settings)
+                            work_content(ctx, &mut AppState::new(), &mut settings.clone())
                         } else {
                             schedule_content(ctx, &state, &settings)
                         };
@@ -1324,7 +1445,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ctx| {
-                    work_content(ctx, &mut state, &settings);
+                    work_content(ctx, &mut state, &mut settings.clone());
                 },
             );
             state.planner.completed.contains(&key)

@@ -17,6 +17,30 @@ pub enum ClockStyle {
     Analog,
 }
 
+/// Which list the desktop's work panel shows.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkTab {
+    /// Assignments, plus exams when they are included.
+    #[default]
+    Assignments,
+    /// Homework, plus INNA reminders when they are included.
+    Homework,
+}
+
+impl WorkTab {
+    pub const ALL: [Self; 2] = [Self::Assignments, Self::Homework];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Assignments => "Assignments",
+            Self::Homework => "Homework",
+        }
+    }
+}
+
+/// Bump when a default layout changes; see `DesktopSettings::load_from`.
+const LAYOUT_VERSION: u8 = 1;
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DesktopTheme {
     #[default]
@@ -160,6 +184,10 @@ pub struct DesktopSettings {
     pub show_deadlines: bool,
     pub include_exams: bool,
     pub include_reminders: bool,
+    pub work_tab: WorkTab,
+    /// Files saved before this field existed read as 0.
+    #[serde(default)]
+    pub layout_version: u8,
 }
 
 impl Default for DesktopSettings {
@@ -177,9 +205,9 @@ impl Default for DesktopSettings {
             show_date: true,
             show_seconds: false,
             panel_width: 368,
-            panel_height: 590,
+            panel_height: 496,
             text_scale: 100,
-            vertical_position: 50,
+            vertical_position: 62,
             accent: DesktopAccent::Theme,
             theme: DesktopTheme::Navy,
             custom_accent: [111, 211, 232],
@@ -190,6 +218,8 @@ impl Default for DesktopSettings {
             show_deadlines: true,
             include_exams: false,
             include_reminders: false,
+            work_tab: WorkTab::Assignments,
+            layout_version: LAYOUT_VERSION,
         }
     }
 }
@@ -231,6 +261,15 @@ impl DesktopSettings {
                     && settings.clock_style == ClockStyle::Reactor
                 {
                     settings.clock_style = ClockStyle::Digital;
+                }
+                // Panels still on the old 590 px / 50% defaults move to the shorter default.
+                if settings.layout_version < 1 {
+                    if settings.panel_height == 590 && settings.vertical_position == 50 {
+                        let defaults = Self::default();
+                        settings.panel_height = defaults.panel_height;
+                        settings.vertical_position = defaults.vertical_position;
+                    }
+                    settings.layout_version = LAYOUT_VERSION;
                 }
                 settings.panel_opacity = settings.panel_opacity.min(80);
                 settings.clock_scale = settings.clock_scale.clamp(80, 180);
@@ -293,6 +332,25 @@ mod tests {
             assert_eq!(settings.clock_style, ClockStyle::Digital);
         }
         assert_eq!(settings.panel_opacity, 80);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn old_default_panel_size_moves_to_the_new_default_but_custom_sizes_stay() {
+        let path =
+            std::env::temp_dir().join(format!("anni-layout-test-{}.json", std::process::id()));
+        let defaults = DesktopSettings::default();
+        std::fs::write(&path, br#"{"panel_height":590,"vertical_position":50}"#).unwrap();
+        let settings = DesktopSettings::load_from(&path).unwrap();
+        assert_eq!(settings.panel_height, defaults.panel_height);
+        assert_eq!(settings.vertical_position, defaults.vertical_position);
+        assert_eq!(settings.layout_version, LAYOUT_VERSION);
+        assert_eq!(settings.work_tab, WorkTab::Assignments);
+        std::fs::write(&path, br#"{"panel_height":700,"vertical_position":50}"#).unwrap();
+        assert_eq!(DesktopSettings::load_from(&path).unwrap().panel_height, 700);
+        // Once saved with the current version, 590 px is a deliberate choice.
+        std::fs::write(&path, br#"{"panel_height":590,"vertical_position":50,"layout_version":1}"#).unwrap();
+        assert_eq!(DesktopSettings::load_from(&path).unwrap().panel_height, 590);
         std::fs::remove_file(path).unwrap();
     }
 

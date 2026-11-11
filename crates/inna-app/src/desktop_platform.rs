@@ -316,8 +316,34 @@ mod windows {
         CallWindowProcW(std::mem::transmute(previous), hwnd, message, wparam, lparam)
     }
 
+    static ROOT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+    /// Shows and focuses the planner, as a second launch does. The focus tells the
+    /// planner it is no longer hidden.
+    pub fn reveal_planner() {
+        let root = ROOT.load(std::sync::atomic::Ordering::Relaxed) as HWND;
+        if root.is_null() {
+            return;
+        }
+        unsafe {
+            ShowWindow(root, if IsIconic(root) != 0 { SW_RESTORE } else { SW_SHOW });
+            SetForegroundWindow(root);
+        }
+    }
+
+    /// Quits Anni the same way Windows and installers do, which works while hidden.
+    pub fn close_planner() {
+        let root = ROOT.load(std::sync::atomic::Ordering::Relaxed) as HWND;
+        if !root.is_null() {
+            unsafe {
+                PostMessageW(root, WM_CLOSE, 0, 0);
+            }
+        }
+    }
+
     /// Lets the planner window close while hidden. Call once, with the root window.
     pub fn close_while_hidden(root: isize) {
+        ROOT.store(root, std::sync::atomic::Ordering::Relaxed);
         unsafe {
             let previous =
                 SetWindowLongPtrW(root as HWND, GWLP_WNDPROC, root_proc as *const () as isize);

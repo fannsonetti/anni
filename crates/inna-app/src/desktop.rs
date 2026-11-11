@@ -269,7 +269,7 @@ impl Desktop {
                     action = DesktopAction::Quit;
                 }
             });
-            hint(ui, "Closing the window quits Anni and its widgets. Use Show desktop widgets to leave them running, then open Anni from its shortcut to return.");
+            hint(ui, "Anni lives in the notification area by the clock: click its icon to open the planner, or right-click it to quit. Minimizing or Show desktop widgets tucks the planner away there; closing the window quits Anni and its widgets.");
             if mock {
                 ui.label(RichText::new("Demo mode · preferences are temporary and startup is disabled.").size(12.0).color(WARNING));
             }

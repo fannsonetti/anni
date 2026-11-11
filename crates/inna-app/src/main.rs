@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod class_names;
 mod day;
 mod desktop;
 mod desktop_platform;
@@ -14,6 +15,8 @@ mod planner;
 mod runtime;
 mod settings;
 mod state;
+#[cfg(windows)]
+mod tray;
 mod ui;
 mod updates;
 
@@ -107,6 +110,7 @@ fn main() {
                 .with_title(ui::brand::NAME)
                 .with_app_id(if cli.mock { "anni-preview" } else { "anni" })
                 .with_icon(ui::brand::icon())
+                .with_taskbar(false)
                 // All viewports share the root's GL configuration, including its alpha channel.
                 .with_transparent(true)
                 .with_inner_size([1280.0, 860.0])
@@ -117,6 +121,9 @@ fn main() {
     };
 
     let mock_mode = cli.mock;
+    // Anni lives in the notification area instead of the taskbar.
+    #[cfg(windows)]
+    let _tray = tray::create();
 
     eframe::run_native(
         ui::brand::NAME,

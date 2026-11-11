@@ -110,6 +110,9 @@ impl AppData {
             }
             None
         } else {
+            if let Err(error) = crate::class_names::load() {
+                tracing::warn!("{error}");
+            }
             match Database::open(&Database::default_path()) {
                 Ok(db) => {
                     if let Err(error) = persistence::restore(&db, &mut state) {
@@ -471,6 +474,18 @@ impl AppData {
             // A second launch can reveal the root through the native instance handler.
             self.desktop.planner_hidden = false;
         }
+        // Without a taskbar button a minimized window would be lost; tuck it into the tray.
+        if cfg!(windows)
+            && !self.desktop.planner_hidden
+            && !self.desktop.quit_requested
+            && ctx.input(|i| i.viewport().minimized == Some(true))
+        {
+            self.desktop.handle(
+                crate::desktop::DesktopAction::HidePlanner,
+                ctx,
+                &mut self.state,
+            );
+        }
         if ctx.input(|i| i.viewport().close_requested()) && !self.desktop.quit_requested {
             self.desktop.handle(
                 crate::desktop::DesktopAction::Quit,
@@ -582,6 +597,7 @@ impl AppData {
                             theme::page_title(ui, "Settings", "Desktop widgets, your INNA connection, and local data.");
                             let desktop_action = self.desktop.settings_ui(ui, self.mock_mode);
                             self.desktop.handle(desktop_action, ctx, &mut self.state);
+                            crate::class_names::settings_ui(ui, self.mock_mode);
                             let action=ui::connection::show(ui,&mut self.state);self.connection_action(action,ctx);
                             crate::diagnostics::settings_ui(ui, self.mock_mode);
                         });

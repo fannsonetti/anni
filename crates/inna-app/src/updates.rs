@@ -618,6 +618,7 @@ pub fn viewport() -> egui::ViewportBuilder {
         .with_title("anni")
         .with_app_id("anni-updater")
         .with_icon(crate::ui::brand::icon())
+        .with_taskbar(false)
         .with_inner_size(size)
         .with_min_inner_size(size)
         .with_position(area.center() - size * 0.5)

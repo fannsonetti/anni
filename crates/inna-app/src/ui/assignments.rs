@@ -7,7 +7,12 @@ use crate::{
 use egui::{RichText, Ui};
 use inna_core::models::AssignmentModule;
 
-pub fn subject(code: &str) -> &str {
+/// The name shown for a class: your own name from Settings → Class names, else the built-in one.
+pub fn subject(code: &str) -> String {
+    crate::class_names::custom_name(code).unwrap_or_else(|| built_in_subject(code).to_string())
+}
+
+pub fn built_in_subject(code: &str) -> &str {
     for (prefix, name) in [
         ("DANS", "Danish"),
         ("ENSK", "English"),
