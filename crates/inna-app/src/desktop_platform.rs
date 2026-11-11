@@ -292,6 +292,11 @@ mod windows {
     }
 
     static ROOT_PROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+    static USER_CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    pub fn take_user_close() -> bool {
+        USER_CLOSE.swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
 
     unsafe extern "system" fn root_proc(
         hwnd: HWND,
@@ -299,20 +304,29 @@ mod windows {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        let previous = ROOT_PROC.load(std::sync::atomic::Ordering::Relaxed);
+        // Deliver the title-bar X and Alt+F4 through eframe so Anni can update
+        // its planner state before it hides the window.
+        if message == WM_SYSCOMMAND && (wparam & 0xFFF0) as u32 == SC_CLOSE {
+            USER_CLOSE.store(true, std::sync::atomic::Ordering::Relaxed);
+            return CallWindowProcW(std::mem::transmute(previous), hwnd, WM_CLOSE, 0, 0);
+        }
         // egui only sees a close during a paint, and hidden windows never paint, so
         // `anni --desktop` ignored WM_CLOSE from Windows, installers, and taskkill.
-        if message == WM_CLOSE && IsWindowVisible(hwnd) == 0 {
-            SetWindowPos(
-                hwnd,
-                null_mut(),
-                -32000,
-                -32000,
-                0,
-                0,
-                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-            );
+        if message == WM_CLOSE {
+            USER_CLOSE.store(false, std::sync::atomic::Ordering::Relaxed);
+            if IsWindowVisible(hwnd) == 0 {
+                SetWindowPos(
+                    hwnd,
+                    null_mut(),
+                    -32000,
+                    -32000,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                );
+            }
         }
-        let previous = ROOT_PROC.load(std::sync::atomic::Ordering::Relaxed);
         CallWindowProcW(std::mem::transmute(previous), hwnd, message, wparam, lparam)
     }
 
@@ -476,6 +490,10 @@ pub fn work_area() -> Rect {
 pub fn arrange_widgets() {}
 #[cfg(not(windows))]
 pub fn set_clickable(_: Vec<Rect>) {}
+#[cfg(not(windows))]
+pub fn take_user_close() -> bool {
+    false
+}
 #[cfg(not(windows))]
 pub struct ForegroundWatcher;
 #[cfg(not(windows))]

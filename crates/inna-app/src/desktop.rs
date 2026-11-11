@@ -286,7 +286,7 @@ impl Desktop {
                     action = DesktopAction::Quit;
                 }
             });
-            hint(ui, t("Anni lives in the notification area by the clock: click its icon to open the planner, or right-click it to quit. Minimizing or Show desktop widgets tucks the planner away there; closing the window quits Anni and its widgets.", "Anni býr á tilkynningasvæðinu við klukkuna: smelltu á táknið til að opna skipulagið eða hægrismelltu til að loka. Að lágmarka eða velja Sýna skjáborðsgræjur geymir skipulagið þar; að loka glugganum lokar Anni og græjunum."));
+            hint(ui, t("Click the notification-area icon to open the planner, or right-click it to quit. Closing the planner on Windows hides it while desktop widgets are enabled. With widgets disabled, closing the planner quits Anni.", "Smelltu á táknið á tilkynningasvæðinu til að opna skipulagið eða hægrismelltu til að hætta. Þegar skjáborðsgræjur eru virkar felur lokun gluggans skipulagið í Windows. Þegar slökkt er á græjunum lokar glugginn Anni."));
             if mock {
                 ui.label(RichText::new(t("Demo mode · preferences are temporary and startup is disabled.", "Sýnishorn · stillingar eru tímabundnar og ræsing er óvirk.")).size(12.0).color(WARNING));
             }
