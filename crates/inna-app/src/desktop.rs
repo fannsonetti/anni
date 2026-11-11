@@ -186,6 +186,7 @@ impl Desktop {
             self.hide_on_start -= 1;
             ctx.request_repaint();
         }
+        platform::set_hide_on_close(self.settings.enabled && !self.quit_requested);
         if self.settings.enabled && !self.quit_requested {
             if self.foreground_watcher.is_none() {
                 self.foreground_watcher = Some(platform::ForegroundWatcher::new());
