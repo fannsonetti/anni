@@ -261,11 +261,32 @@ impl Runtime {
                     "INNA did not return a student ID".into(),
                 ));
             }
+            let saved_assignments = assignments.clone();
             match client
                 .schoolwork(assignments, homework, &timetable, now)
                 .await
             {
-                Ok(work) => {
+                Ok(mut work) => {
+                    // Each course's Einkunnir tab: the assessment plan the grade calculator uses.
+                    if let Some(sid) = student_id.as_deref().filter(|s| !s.is_empty()) {
+                        match client
+                            .attach_grade_rules(&mut work.assignments, &saved_assignments, sid)
+                            .await
+                        {
+                            Ok(warnings) => work.warnings.extend(warnings),
+                            Err(error) => {
+                                for module in &mut work.assignments {
+                                    if let Some(old) = saved_assignments
+                                        .iter()
+                                        .find(|m| m.group_id.is_some() && m.group_id == module.group_id)
+                                    {
+                                        module.grade_rules = old.grade_rules.clone();
+                                    }
+                                }
+                                work.warnings.push(("grades".into(), error.to_string()));
+                            }
+                        }
+                    }
                     let _ = tx.send(RuntimeMsg::AssignmentsUpdated(work.assignments));
                     let _ = tx.send(RuntimeMsg::HomeworkUpdated(work.homework));
                     for (resource, warning) in work.warnings {

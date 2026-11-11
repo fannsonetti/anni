@@ -165,7 +165,16 @@ fn verify_schoolwork() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("Timetable verified: {} active lessons, {} teacher-absence cancellations",
             timetable.iter().filter(|entry| entry.is_active_lesson()).count(),
             timetable.iter().filter(|entry| entry.teacher_absent).count());
-        let work = client.schoolwork(vec![], vec![], &timetable, today).await?;
+        let mut work = client.schoolwork(vec![], vec![], &timetable, today).await?;
+        let student = user.student_id_str().ok_or("INNA did not return a student ID")?;
+        let grade_warnings = client.attach_grade_rules(&mut work.assignments, &[], student).await?;
+        work.warnings.extend(grade_warnings);
+        for module in &work.assignments {
+            let course = calculator::Course::from_module(module);
+            let plan = calculator::plan(&course, &Default::default(), Some(calculator::Target::Final(7)));
+            tracing::info!("Grades {}: {:?} plan, {} parts, earned {:.2}, for a 7: {:?}",
+                module.module_str(), course.structure, course.parts.len() - 1, plan.earned, plan.outcome);
+        }
         let courses = work.assignments.len();
         let mut state = state::AppState::new();
         state.assignments = work.assignments;

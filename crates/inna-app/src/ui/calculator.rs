@@ -1,4 +1,4 @@
-use crate::calculator::{self, Course, Outcome, Source, Target};
+use crate::calculator::{self, Course, Outcome, Source, Structure, Target};
 use crate::ui::assignments::{modules, subject};
 use crate::ui::theme::*;
 use crate::{
@@ -45,7 +45,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         .or_else(|| {
             modules
                 .iter()
-                .find(|m| !Course::from_module(m).rows.iter().all(|r| r.unlisted()))
+                .find(|m| Course::from_module(m).has_parts())
                 .or(modules.first())
                 .map(|m| m.module_str().to_string())
         });
@@ -99,81 +99,32 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     card().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.label(
-            RichText::new(t("Assignments & exams", "Verkefni og próf"))
+            RichText::new(t("Assessment plan", "Námsmat"))
                 .size(17.0)
                 .family(semibold()),
         );
-        ui.label(
-            RichText::new(t(
-                "Grades from INNA are fixed. Type a grade into any open item to try a \"what if\"; the needed grade on the other items updates.",
-                "Einkunnir úr INNU eru fastar. Skrifaðu einkunn í opið atriði til að prófa \"hvað ef\"; einkunnin sem þarf á hinum atriðunum uppfærist.",
-            ))
-            .size(12.0)
-            .color(TEXT_SECONDARY),
-        );
+        let source = match course.structure {
+            Structure::Plan => t(
+                "From the course's Einkunnir tab in INNA. Grades from INNA are fixed; type a grade into any open item to try a \"what if\" and the needed grade on the others updates.",
+                "Úr Einkunnir-flipa áfangans í INNU. Einkunnir úr INNU eru fastar; skrifaðu einkunn í opið atriði til að prófa \"hvað ef\" og einkunnin sem þarf á hinum uppfærist.",
+            ),
+            Structure::Assignments if !course.has_parts() => t(
+                "INNA has no assessment plan for this course yet, so the whole course counts as one part.",
+                "INNA er ekki með námsmat fyrir þennan áfanga enn svo allur áfanginn telst sem einn hluti.",
+            ),
+            Structure::Assignments => t(
+                "INNA has no assessment plan for this course yet, so the weights listed on its assignments are used.",
+                "INNA er ekki með námsmat fyrir þennan áfanga enn svo vægið sem skráð er á verkefnin er notað.",
+            ),
+        };
+        ui.label(RichText::new(source).size(12.0).color(TEXT_SECONDARY));
         ui.add_space(6.0);
-        for (row, value) in course.rows.iter().zip(&plan.values) {
+        for (index, part) in course.parts.iter().enumerate().skip(1) {
             ui.separator();
-            let name = if row.unlisted() {
-                t("Rest of the course (not in INNA yet)", "Restin af áfanganum (ekki komið í INNU)").to_string()
-            } else {
-                row.name.clone()
-            };
-            ui.label(RichText::new(name).family(semibold()));
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new(tr!(
-                        "Weight {}%",
-                        "Vægi {}%",
-                        locale::decimal(row.weight, 1)
-                    ))
-                    .size(13.0)
-                    .color(TEXT_SECONDARY),
-                );
-                match value {
-                    Some((grade, Source::Inna)) => {
-                        ui.label(
-                            RichText::new(tr!(
-                                "From INNA: {}",
-                                "Úr INNU: {}",
-                                locale::decimal(*grade, 2)
-                            ))
-                            .family(semibold()),
-                        );
-                    }
-                    Some((grade, Source::Needed)) => {
-                        ui.label(
-                            RichText::new(tr!(
-                                "Needed: {}",
-                                "Þarft: {}",
-                                locale::decimal(*grade, 1)
-                            ))
-                            .family(semibold())
-                            .color(ACCENT),
-                        );
-                    }
-                    _ => {}
-                }
-                if row.inna.is_none() {
-                    let text = texts.entry(row.key.clone()).or_default();
-                    ui.add(
-                        egui::TextEdit::singleline(text)
-                            .id_salt(("calculator_entry", &code, &row.key))
-                            .desired_width(64.0)
-                            .hint_text(t("what if", "hvað ef")),
-                    );
-                    if !text.trim().is_empty() {
-                        if grades::numeric_grade(text).is_none() {
-                            ui.label(
-                                RichText::new(t("Enter 0–10", "Sláðu inn 0–10"))
-                                    .size(12.0)
-                                    .color(WARNING),
-                            );
-                        } else if ui.small_button(t("Clear", "Hreinsa")).clicked() {
-                            text.clear();
-                        }
-                    }
-                }
+            let indent = 16.0 * (part.depth.saturating_sub(1)) as f32;
+            ui.horizontal(|ui| {
+                ui.add_space(indent);
+                ui.vertical(|ui| part_row(ui, &course, index, plan.values[index], texts, &code));
             });
         }
     });
@@ -182,8 +133,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         ui.set_min_width(ui.available_width());
         ui.label(RichText::new(t("How is this calculated?", "Hvernig er þetta reiknað?")).family(semibold()));
         ui.label(t(
-            "Final grade = sum of grade × weight ÷ 100. The needed grade is the same on every open item and is rounded up to one decimal, so reaching it is always enough.",
-            "Lokaeinkunn = summa einkunn × vægi ÷ 100. Einkunnin sem þarf er sú sama á öllum opnum atriðum og er námunduð upp að einum aukastaf svo það dugar alltaf að ná henni.",
+            "Each part is a weighted average of its own parts, and where only the best few count, the lower ones are left out. The needed grade is the same on every open item and is rounded up to one decimal, so reaching it is always enough.",
+            "Hver hluti er vegið meðaltal sinna undirhluta og þar sem aðeins þeir bestu gilda eru þeir lægri ekki teknir með. Einkunnin sem þarf er sú sama á öllum opnum atriðum og er námunduð upp að einum aukastaf svo það dugar alltaf að ná henni.",
         ));
         ui.label(t(
             "Final grades are whole numbers, so a 7 needs an average of at least 6.50. If INNA has not listed the whole assessment plan yet, the missing weight is shown as the rest of the course.",
@@ -203,6 +154,93 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             "Individual course requirements, such as a minimum grade on the final exam, may also apply.",
             "Sérstakar kröfur áfanga, til dæmis lágmarkseinkunn á lokaprófi, geta líka gilt.",
         ));
+    });
+}
+
+fn part_row(
+    ui: &mut Ui,
+    course: &Course,
+    index: usize,
+    value: Option<(f64, Source)>,
+    texts: &mut HashMap<String, String>,
+    code: &str,
+) {
+    let part = &course.parts[index];
+    let name = if part.unlisted() {
+        t("Rest of the course (not in INNA yet)", "Restin af áfanganum (ekki komið í INNU)").to_string()
+    } else if part.name.trim().is_empty() {
+        t("Unnamed part", "Ónefndur hluti").to_string()
+    } else {
+        part.name.clone()
+    };
+    ui.label(RichText::new(name).family(semibold()).size(if part.is_group() { 15.0 } else { 14.0 }));
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            RichText::new(tr!(
+                "{}% of final grade",
+                "{}% af lokaeinkunn",
+                locale::decimal(part.share, 1)
+            ))
+            .size(13.0)
+            .color(TEXT_SECONDARY),
+        );
+        if part.is_group() {
+            if let Some(best) = part.best {
+                ui.label(
+                    RichText::new(tr!(
+                        "best {} of {} count",
+                        "{} bestu af {} gilda",
+                        best,
+                        part.children.len()
+                    ))
+                    .size(13.0)
+                    .color(ACCENT),
+                );
+            }
+            if let Some(grade) = part.inna {
+                ui.label(
+                    RichText::new(tr!("From INNA: {}", "Úr INNU: {}", locale::decimal(grade, 2)))
+                        .family(semibold()),
+                );
+            }
+            return;
+        }
+        match value {
+            Some((grade, Source::Inna)) => {
+                ui.label(
+                    RichText::new(tr!("From INNA: {}", "Úr INNU: {}", locale::decimal(grade, 2)))
+                        .family(semibold()),
+                );
+            }
+            Some((grade, Source::Needed)) => {
+                ui.label(
+                    RichText::new(tr!("Needed: {}", "Þarft: {}", locale::decimal(grade, 1)))
+                        .family(semibold())
+                        .color(ACCENT),
+                );
+            }
+            _ => {}
+        }
+        if part.inna.is_none() {
+            let text = texts.entry(part.key.clone()).or_default();
+            ui.add(
+                egui::TextEdit::singleline(text)
+                    .id_salt(("calculator_entry", code, &part.key))
+                    .desired_width(64.0)
+                    .hint_text(t("what if", "hvað ef")),
+            );
+            if !text.trim().is_empty() {
+                if grades::numeric_grade(text).is_none() {
+                    ui.label(
+                        RichText::new(t("Enter 0–10", "Sláðu inn 0–10"))
+                            .size(12.0)
+                            .color(WARNING),
+                    );
+                } else if ui.small_button(t("Clear", "Hreinsa")).clicked() {
+                    text.clear();
+                }
+            }
+        }
     });
 }
 
@@ -460,6 +498,29 @@ mod tests {
                 assert!(text.contains(inna), "{language:?}: {text}");
                 assert!(text.contains(needed), "{language:?}: {text}");
                 assert!(text.contains("ENSK2HF05"));
+            }
+        }
+    }
+
+    #[test]
+    fn an_inna_assessment_plan_shows_its_groups_and_best_of_rules() {
+        for (language, best, share) in [
+            (locale::Language::English, "best 2 of 3 count", "70.0% of final grade"),
+            (locale::Language::Icelandic, "2 bestu af 3 gilda", "70,0% af lokaeinkunn"),
+        ] {
+            locale::set_language(language);
+            for width in [700.0, 1200.0] {
+                let mut state = AppState::new();
+                state.assignments = crate::mock::mock_assignments();
+                state.calculator.course = Some("STÆR3AF05".into());
+                state.calculator.target = Some(Target::Final(7));
+                let ctx = egui::Context::default();
+                crate::ui::theme::apply_theme(&ctx);
+                let text = painted(&ctx, width, &mut state);
+                for expected in [best, share, "Partial tests", "Final exam"] {
+                    assert!(text.contains(expected), "{language:?} missing {expected}: {text}");
+                }
+                assert!(text.contains("6.3") || text.contains("6,3"), "{text}");
             }
         }
     }

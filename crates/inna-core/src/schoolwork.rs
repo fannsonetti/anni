@@ -91,6 +91,7 @@ impl InnaClient {
                             group_id: course.group_id.clone(),
                             assignments: rows,
                             categories: serde_json::Value::Null,
+                            grade_rules: Vec::new(),
                         });
                     }
                 }
@@ -121,6 +122,40 @@ impl InnaClient {
             }
         }
         Ok(result)
+    }
+}
+
+impl InnaClient {
+    /// Downloads every course's assessment plan (its Einkunnir tab) into `modules`.
+    /// A course whose plan cannot be read keeps the plan saved from `saved`.
+    pub async fn attach_grade_rules(
+        &self,
+        modules: &mut [AssignmentModule],
+        saved: &[AssignmentModule],
+        student: &str,
+    ) -> Result<Vec<(String, String)>, InnaError> {
+        let mut warnings = Vec::new();
+        for module in modules.iter_mut() {
+            let Some(group) = module.group_id.clone().filter(|g| !g.is_empty()) else {
+                continue;
+            };
+            match self.grade_rules(&group, student).await {
+                Ok(rules) => module.grade_rules = rules,
+                Err(error @ (InnaError::SessionExpired | InnaError::NotAuthenticated | InnaError::Network)) => {
+                    return Err(error)
+                }
+                Err(error) => {
+                    if let Some(old) = saved.iter().find(|m| m.group_id.as_deref() == Some(&group)) {
+                        module.grade_rules = old.grade_rules.clone();
+                    }
+                    warnings.push((
+                        "grades".to_string(),
+                        format!("{} · Einkunnir: {error}. Saved grades retained where available.", module.module_str()),
+                    ));
+                }
+            }
+        }
+        Ok(warnings)
     }
 }
 

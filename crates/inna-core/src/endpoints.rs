@@ -7,6 +7,7 @@ pub const TEACHER_ABSENCES: &str = "/api/Absences/GetStudentTeacherAbsences";
 pub const ASSIGNMENTS: &str = "/api/GetAssignments/GetStudentAssignments";
 pub const STUDENT_PROJECTS: &str = "/api/GetAssignments/GetStudentProjects";
 pub const COURSE_ASSIGNMENTS: &str = "/api/GetAssignments/GetStudentAssignmentsGroup";
+pub const GRADE_RULE_GRADES: &str = "/api/StudentGrades/GetStudentGradeRuleGrades";
 pub const COURSES: &str = "/api/ModulesAndBooklist/GetModulesAndBooklist";
 pub const HOMEWORK: &str = "/api/Homework/GetStudentHomework";
 pub const HOMEWORK_CALENDAR: &str = "/api/Homework/GetHomeworkGoalsByDates";

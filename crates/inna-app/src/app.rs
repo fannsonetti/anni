@@ -264,6 +264,8 @@ impl AppData {
                 RuntimeMsg::AssignmentsUpdated(data) => {
                     self.state.assignments = data;
                     self.synced("assignments");
+                    // Grade plans come with assignments; any new problem is reported right after.
+                    self.state.sync_errors.remove("grades");
                 }
                 RuntimeMsg::HomeworkUpdated(data) => {
                     self.state.homework = data;

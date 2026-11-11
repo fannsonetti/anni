@@ -178,6 +178,10 @@ pub fn mock_assignments() -> Vec<AssignmentModule> {
             {"assignmentId": "sample-3", "name": "Review notes for the next class", "handedIn": "0"}
         ]
     })).unwrap();
+    let mut upcoming = upcoming;
+    let plans: serde_json::Value =
+        serde_json::from_str(include_str!("../../../tests/fixtures/grade_rules.json")).unwrap();
+    upcoming.grade_rules = serde_json::from_value(plans["best_of"].clone()).unwrap();
     modules.push(upcoming);
     if let Some(english) = modules.iter_mut().find(|m| m.module_str() == "ENSK2HF05") {
         english.assignments.extend(serde_json::from_value::<Vec<Assignment>>(serde_json::json!([

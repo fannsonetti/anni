@@ -1,0 +1,26 @@
+{
+  "best_of": [
+    {"gradeRule": "Final grade", "gradeRuleId": 1, "recalculatedWeight": 100, "level": 1, "finalGrade": true},
+    {"gradeRule": "Partial tests", "gradeRuleId": 10, "weighsUpTo": 1, "weight": 20, "recalculatedWeight": 20, "nrBestSub": 2, "level": 2, "order": 1},
+    {"name": "Partial test 1", "gradeRule": "Partial test 1", "assignmentId": 501, "gradeRuleId": 2, "weighsUpTo": 10, "weight": 50, "recalculatedWeight": 10, "grade": "7,0", "handedIn": true, "level": 3, "order": 1},
+    {"name": "Partial test 2", "gradeRule": "Partial test 2", "assignmentId": 502, "gradeRuleId": 4, "weighsUpTo": 10, "weight": 50, "recalculatedWeight": 10, "grade": "8", "handedIn": true, "level": 3, "order": 2},
+    {"gradeRule": "Partial test 3", "gradeRuleId": 3, "weighsUpTo": 10, "weight": 50, "recalculatedWeight": 10, "level": 3, "order": 3},
+    {"gradeRule": "Attendance", "gradeRuleId": 5, "weighsUpTo": 1, "weight": 10, "recalculatedWeight": 10, "level": 2, "order": 2},
+    {"gradeRule": "Final exam", "gradeRuleId": 6, "weighsUpTo": 1, "weight": 70, "recalculatedWeight": 70, "level": 2}
+  ],
+  "nested": [
+    {"gradeRule": "Project A", "gradeRuleId": 21, "weighsUpTo": 20, "weight": 50, "recalculatedWeight": 16, "grade": "9", "level": 3, "order": 1},
+    {"gradeRule": "Project B", "gradeRuleId": 22, "weighsUpTo": 20, "weight": 16, "recalculatedWeight": 5, "level": 3, "order": 3},
+    {"gradeRule": "Project C", "gradeRuleId": 23, "weighsUpTo": 20, "weight": 30, "recalculatedWeight": 9, "grade": "7", "level": 3, "order": 2},
+    {"gradeRule": "Final grade", "gradeRuleId": 1, "recalculatedWeight": 100, "level": 1, "finalGrade": true},
+    {"gradeRule": "Final exam", "gradeRuleId": 12, "weighsUpTo": 1, "weight": 70, "recalculatedWeight": 70, "level": 2},
+    {"gradeRule": "Coursework", "gradeRuleId": 20, "weighsUpTo": 1, "weight": 30, "recalculatedWeight": 30, "level": 2, "order": 1}
+  ],
+  "empty": [
+    {"gradeRule": "Final grade", "gradeRuleId": 1, "recalculatedWeight": 100, "level": 1, "finalGrade": true}
+  ],
+  "published": [
+    {"gradeRule": "Final grade", "gradeRuleId": 1, "recalculatedWeight": 100, "grade": "8", "level": 1, "finalGrade": true},
+    {"gradeRule": "Final exam", "gradeRuleId": 2, "weighsUpTo": 1, "weight": 100, "recalculatedWeight": 100, "level": 2}
+  ]
+}

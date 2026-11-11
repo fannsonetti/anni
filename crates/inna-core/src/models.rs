@@ -152,6 +152,43 @@ pub struct AssignmentModule {
     pub assignments: Vec<Assignment>,
     #[serde(default)]
     pub categories: serde_json::Value,
+    /// The course's assessment plan from its Einkunnir tab (empty until downloaded).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grade_rules: Vec<GradeRule>,
+}
+
+/// One part of a course's assessment plan, from
+/// `/api/StudentGrades/GetStudentGradeRuleGrades`. Parts form a tree through
+/// `weighs_up_to`; the root (`final_grade`) is the course's final grade.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeRule {
+    pub grade_rule_id: Option<i64>,
+    /// The parent part this one counts toward.
+    pub weighs_up_to: Option<i64>,
+    pub grade_rule: Option<String>,
+    pub name: Option<String>,
+    /// Percent of the parent part.
+    pub weight: Option<serde_json::Value>,
+    /// Percent of the final grade, as INNA calculates it.
+    pub recalculated_weight: Option<serde_json::Value>,
+    pub grade: Option<String>,
+    /// Only this many of the best sub-parts count.
+    pub nr_best_sub: Option<u32>,
+    pub order: Option<i64>,
+    pub level: Option<i64>,
+    #[serde(default)]
+    pub final_grade: bool,
+    pub assignment_id: Option<serde_json::Value>,
+}
+
+impl GradeRule {
+    pub fn title(&self) -> &str {
+        self.name
+            .as_deref()
+            .or(self.grade_rule.as_deref())
+            .unwrap_or("")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

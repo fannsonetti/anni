@@ -278,6 +278,7 @@ pub fn resource(name: &str) -> &str {
         "announcements" => t("announcements", "tilkynningar"),
         "assignments" => t("assignments", "verkefni"),
         "homework" => t("homework", "heimavinna"),
+        "grades" => t("grades", "einkunnir"),
         "todo" => t("to-do list", "verkefnalisti"),
         "connection" => t("connection", "tenging"),
         _ => name,

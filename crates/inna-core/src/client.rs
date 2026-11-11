@@ -162,6 +162,14 @@ impl InnaClient {
         self.get(&format!("{COURSE_ASSIGNMENTS}?{query}")).await
     }
 
+    /// A course's assessment plan with your grades: the Einkunnir tab of the course.
+    pub async fn grade_rules(&self, group: &str, student: &str) -> Result<Vec<GradeRule>, InnaError> {
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs([("groupId", group), ("studentId", student)])
+            .finish();
+        self.get(&format!("{GRADE_RULE_GRADES}?{query}")).await
+    }
+
     pub async fn course_homework(&self, group: &str) -> Result<Vec<Homework>, InnaError> {
         let query = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("groupId", group)

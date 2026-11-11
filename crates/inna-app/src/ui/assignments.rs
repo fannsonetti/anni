@@ -62,6 +62,7 @@ pub fn modules(state: &AppState) -> Vec<AssignmentModule> {
                 group_id: None,
                 assignments: Vec::new(),
                 categories: serde_json::Value::Null,
+                grade_rules: Vec::new(),
             });
         }
     }
