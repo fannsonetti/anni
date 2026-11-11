@@ -14,15 +14,16 @@ pub enum ConnectionState {
 }
 
 impl ConnectionState {
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> &'static str {
+        use crate::locale::t;
         match self {
-            Self::Starting => "Not connected",
-            Self::Offline => "Offline",
-            Self::Authenticating => "Connecting…",
-            Self::Connected => "Connected to INNA",
-            Self::SessionExpired => "Sign-in expired",
-            Self::Error(_) => "Connection error",
-            Self::MockMode => "Demo data",
+            Self::Starting => t("Not connected", "Ekki tengt"),
+            Self::Offline => t("Offline", "Án nettengingar"),
+            Self::Authenticating => t("Connecting…", "Tengist…"),
+            Self::Connected => t("Connected to INNA", "Tengt við INNU"),
+            Self::SessionExpired => t("Sign-in expired", "Innskráning útrunnin"),
+            Self::Error(_) => t("Connection error", "Villa í tengingu"),
+            Self::MockMode => t("Demo data", "Sýnigögn"),
         }
     }
 
@@ -47,25 +48,27 @@ pub enum Page {
 }
 
 impl Page {
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> &'static str {
+        use crate::locale::t;
         match self {
-            Self::Home => "Overview",
-            Self::Timetable => "Timetable",
-            Self::Announcements => "Announcements",
-            Self::Assignments => "Courses & grades",
-            Self::Planner => "Schoolwork",
-            Self::Connection => "Settings",
+            Self::Home => t("Overview", "Yfirlit"),
+            Self::Timetable => t("Timetable", "Stundatafla"),
+            Self::Announcements => t("Announcements", "Tilkynningar"),
+            Self::Assignments => t("Courses & grades", "Áfangar og einkunnir"),
+            Self::Planner => t("Schoolwork", "Skólavinna"),
+            Self::Connection => t("Settings", "Stillingar"),
         }
     }
 
     pub fn description(self) -> &'static str {
+        use crate::locale::t;
         match self {
-            Self::Home => "Your school portal at a glance",
-            Self::Planner => "Assignments, tests, homework, and submissions",
-            Self::Timetable => "Lessons, rooms, and teachers",
-            Self::Assignments => "Grades and progress in each course",
-            Self::Announcements => "News from your school",
-            Self::Connection => "Your INNA connection and saved data",
+            Self::Home => t("Your school portal at a glance", "Skólinn þinn í hnotskurn"),
+            Self::Planner => t("Assignments, tests, homework, and submissions", "Verkefni, próf, heimavinna og skil"),
+            Self::Timetable => t("Lessons, rooms, and teachers", "Kennslustundir, stofur og kennarar"),
+            Self::Assignments => t("Grades and progress in each course", "Einkunnir og framvinda í hverjum áfanga"),
+            Self::Announcements => t("News from your school", "Fréttir frá skólanum"),
+            Self::Connection => t("Language, your INNA connection and saved data", "Tungumál, tengingin við INNU og vistuð gögn"),
         }
     }
 

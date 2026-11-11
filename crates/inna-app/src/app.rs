@@ -1,3 +1,4 @@
+use crate::locale::t;
 use crate::mock;
 use crate::persistence;
 use crate::runtime::{Runtime, RuntimeMsg};
@@ -117,14 +118,14 @@ impl AppData {
                 Ok(db) => {
                     if let Err(error) = persistence::restore(&db, &mut state) {
                         tracing::warn!("Could not restore saved data: {error}");
-                        state.storage_error = Some("Could not load saved data.".into());
+                        state.storage_error = Some(t("Could not load saved data.", "Ekki tókst að hlaða vistuðum gögnum.").into());
                     }
                     Some(db)
                 }
                 Err(error) => {
                     tracing::warn!("Local storage unavailable: {error}");
                     state.storage_error = Some(
-                        "Storage is unavailable. Changes will be lost if you close Anni.".into(),
+                        t("Storage is unavailable. Changes will be lost if you close Anni.", "Geymsla er ekki tiltæk. Breytingar glatast ef þú lokar Anni.").into(),
                     );
                     None
                 }
@@ -345,7 +346,7 @@ impl AppData {
                     tracing::warn!("Could not save planner: {error}");
                     crate::diagnostics::failure(crate::diagnostics::Resource::Storage, crate::diagnostics::Failure::Storage);
                     self.state.storage_error =
-                        Some("Could not save changes. Keep Anni open and try saving again.".into())
+                        Some(t("Could not save changes. Keep Anni open and try saving again.", "Ekki tókst að vista breytingar. Hafðu Anni opið og reyndu að vista aftur.").into())
                 }
             }
         }
@@ -374,7 +375,7 @@ impl AppData {
                     self.state.connection = ConnectionState::SessionExpired;
                 } else {
                     self.state.connection = ConnectionState::Error(
-                        "Could not remove your saved sign-in. Please try again.".into(),
+                        t("Could not remove your saved sign-in. Please try again.", "Ekki tókst að fjarlægja vistuðu innskráninguna. Reyndu aftur.").into(),
                     );
                 }
             }
@@ -517,10 +518,16 @@ impl AppData {
                     if !wide && ui::brand::wordmark(ui, true).clicked() { self.state.navigate(Page::Home); }
                     ui::navigation::location(ui, &mut self.state);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.hyperlink_to("Open INNA ↗", "https://nam.inna.is/").on_hover_text("Open INNA for submissions and other school services");
+                        let can_reconnect = !self.mock_mode && !self.auth_in_progress && !self.state.refreshing;
+                        if ui.add_enabled(can_reconnect, egui::Button::new(t("Reconnect to INNA", "Tengjast INNU aftur")))
+                            .on_hover_text(t("Sign in to INNA again in Anni's sign-in window", "Skráðu þig aftur inn í INNU í innskráningarglugga Anni"))
+                            .clicked()
+                        {
+                            self.connection_action(ui::connection::ConnectionAction::ReconnectLocal, ctx);
+                        }
                         let can_refresh = !self.mock_mode && !self.state.refreshing && !self.auth_in_progress
                             && matches!(self.state.connection, ConnectionState::Connected | ConnectionState::Offline) && self.state.user.is_some();
-                        if ui.add_enabled(can_refresh, egui::Button::new(if self.state.refreshing { "Refreshing…" } else { "Refresh" }).frame(false)).clicked() { self.state.refresh_requested = true; }
+                        if ui.add_enabled(can_refresh, egui::Button::new(if self.state.refreshing { t("Refreshing…", "Uppfæri…") } else { t("Refresh", "Uppfæra") }).frame(false)).clicked() { self.state.refresh_requested = true; }
                         if ctx.screen_rect().width() >= 1150.0 {
                             ui.label(RichText::new(self.state.connection.label()).size(11.0).color(theme::TEXT_SECONDARY));
                             let (r, _) = ui.allocate_exact_size(egui::vec2(6.0,6.0),egui::Sense::hover());
@@ -528,29 +535,29 @@ impl AppData {
                         }
                     });
                 });
-            if self.mock_mode {ui.label(RichText::new("Demo data · changes are temporary").size(12.0).color(theme::WARNING));}
-            if self.auth_in_progress && ui.small_button("Sign-in details").clicked(){self.state.navigate(Page::Connection);}
+            if self.mock_mode {ui.label(RichText::new(t("Demo data · changes are temporary", "Sýnigögn · breytingar eru tímabundnar")).size(12.0).color(theme::WARNING));}
+            if self.auth_in_progress && ui.small_button(t("Sign-in details", "Upplýsingar um innskráningu")).clicked(){self.state.navigate(Page::Connection);}
             if !self.mock_mode && !matches!(self.state.connection,ConnectionState::Connected){
                 ui.horizontal_wrapped(|ui| {
                     let text=match &self.state.connection {
-                        ConnectionState::Offline=>"You're offline. Your saved plan is available; Anni will reconnect automatically.",
-                        ConnectionState::Starting=>"Connect INNA to get your timetable, assignments, and grades.",
-                        ConnectionState::SessionExpired=>"Reconnect to INNA to update your saved data.",
-                        ConnectionState::Error(_)=>"Could not connect to INNA. Please try reconnecting.",
-                        _=>"Checking your INNA connection…",
+                        ConnectionState::Offline=>t("You're offline. Your saved plan is available; Anni will reconnect automatically.", "Engin nettenging. Vistaða skipulagið er tiltækt; Anni tengist aftur sjálfkrafa."),
+                        ConnectionState::Starting=>t("Connect INNA to get your timetable, assignments, and grades.", "Tengdu INNU til að fá stundatöflu, verkefni og einkunnir."),
+                        ConnectionState::SessionExpired=>t("Reconnect to INNA to update your saved data.", "Tengstu INNU aftur til að uppfæra vistuðu gögnin."),
+                        ConnectionState::Error(_)=>t("Could not connect to INNA. Please try reconnecting.", "Ekki tókst að tengjast INNU. Reyndu að tengjast aftur."),
+                        _=>t("Checking your INNA connection…", "Athuga tenginguna við INNU…"),
                     };
                     ui.label(RichText::new(text).size(13.0).color(theme::WARNING));
-                    if !self.auth_in_progress && ui.small_button("Connection settings").clicked(){self.state.navigate(Page::Connection);}
+                    if !self.auth_in_progress && ui.small_button(t("Connection settings", "Tengistillingar")).clicked(){self.state.navigate(Page::Connection);}
                 });
             }
             if !self.state.sync_errors.is_empty(){
                 let mut resources:Vec<_>=self.state.sync_errors.keys().map(|s|crate::locale::resource(s)).collect();resources.sort();
-                ui.label(RichText::new(format!("Could not update {}. Showing your last saved data.",resources.join(", "))).size(13.0).color(theme::WARNING));
+                ui.label(RichText::new(tr!("Could not update {}. Showing your last saved data.", "Ekki tókst að uppfæra {}. Sýni síðustu vistuðu gögn.", resources.join(", "))).size(13.0).color(theme::WARNING));
             }
             if let Some(error)=self.state.storage_error.clone(){
                 ui.horizontal_wrapped(|ui| {
                     ui.colored_label(theme::ERROR_RED,error);
-                    if self.database.is_some() && ui.small_button("Retry saving").clicked(){self.state.storage_dirty=true;}
+                    if self.database.is_some() && ui.small_button(t("Retry saving", "Reyna að vista aftur")).clicked(){self.state.storage_dirty=true;}
                 });
             }
         });
@@ -565,18 +572,18 @@ impl AppData {
             if self.auth_in_progress && self.state.selected_page==Page::Connection {
                 theme::card().show(ui,|ui| {
                     if let Some(url)=&self.phone_auth_url {
-                        theme::page_title(ui,"Connect INNA on your phone","Your phone and computer need to be on the same Wi-Fi network.");
-                        ui.label("Open this address on your phone:");
+                        theme::page_title(ui,t("Connect INNA on your phone", "Tengdu INNU í símanum"),t("Your phone and computer need to be on the same Wi-Fi network.", "Síminn og tölvan þurfa að vera á sama Wi-Fi neti."));
+                        ui.label(t("Open this address on your phone:", "Opnaðu þessa slóð í símanum:"));
                         ui.label(RichText::new(url).size(24.0).color(theme::ACCENT));
-                        ui.label("Choose Open INNA, sign in, and keep the page open until the connection completes.");
+                        ui.label(t("Choose Open INNA, sign in, and keep the page open until the connection completes.", "Veldu Opna INNU, skráðu þig inn og hafðu síðuna opna þar til tengingunni lýkur."));
                     }else if self.background_auth_in_progress {
-                        theme::page_title(ui,"Reconnecting to INNA…","Anni is trying your remembered sign-in in the background.");
-                        ui.label("If Google needs verification, use Connect to INNA after this attempt finishes.");
+                        theme::page_title(ui,t("Reconnecting to INNA…", "Tengist INNU aftur…"),t("Anni is trying your remembered sign-in in the background.", "Anni reynir vistuðu innskráninguna í bakgrunni."));
+                        ui.label(t("If Google needs verification, use Connect to INNA after this attempt finishes.", "Ef Google þarf staðfestingu skaltu nota Tengjast INNU þegar þessari tilraun lýkur."));
                     }else{
-                        theme::page_title(ui,"Connecting to INNA…","Finish signing in in Anni's sign-in window.");
-                        ui.label("Your sign-in is remembered on this computer. Google or INNA may occasionally ask you to verify your account again.");
+                        theme::page_title(ui,t("Connecting to INNA…", "Tengist INNU…"),t("Finish signing in in Anni's sign-in window.", "Ljúktu innskráningunni í innskráningarglugga Anni."));
+                        ui.label(t("Your sign-in is remembered on this computer. Google or INNA may occasionally ask you to verify your account again.", "Innskráningin þín er munuð á þessari tölvu. Google eða INNA gæti stöku sinnum beðið þig að staðfesta aðganginn aftur."));
                     }
-                    if ui.button("Back to overview").clicked(){self.state.navigate(Page::Home);}
+                    if ui.button(t("Back to overview", "Aftur á yfirlit")).clicked(){self.state.navigate(Page::Home);}
                 });
                 return;
             }
@@ -594,7 +601,7 @@ impl AppData {
                         // Hermes' Settings is one narrow column of cards.
                         let inset = ((ui.available_width() - 620.0) * 0.5).max(0.0);
                         egui::Frame::none().inner_margin(egui::Margin::symmetric(inset, 0.0)).show(ui, |ui| {
-                            theme::page_title(ui, "Settings", "Desktop widgets, your INNA connection, and local data.");
+                            theme::page_title(ui, t("Settings", "Stillingar"), t("Language, desktop widgets, your INNA connection, and local data.", "Tungumál, skjáborðsgræjur, tengingin við INNU og gögn á tölvunni."));
                             let desktop_action = self.desktop.settings_ui(ui, self.mock_mode);
                             self.desktop.handle(desktop_action, ctx, &mut self.state);
                             crate::class_names::settings_ui(ui, self.mock_mode);
@@ -782,6 +789,71 @@ mod tests {
             },
             tx,
         )
+    }
+
+    /// Every text the frame painted, including nested shapes.
+    fn painted_text(output: &egui::FullOutput) -> String {
+        fn collect(shape: &egui::Shape, text: &mut String) {
+            match shape {
+                egui::Shape::Text(t) => {
+                    text.push_str(t.galley.text());
+                    text.push('\n');
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| collect(s, text)),
+                _ => {}
+            }
+        }
+        let mut text = String::new();
+        for clipped in &output.shapes {
+            collect(&clipped.shape, &mut text);
+        }
+        text
+    }
+
+    #[test]
+    fn every_page_renders_in_both_languages_with_reconnect_in_the_corner() {
+        use crate::locale::Language;
+        for language in Language::ALL {
+            for page in Page::NAV_PAGES {
+                for width in [900.0, 1300.0] {
+                    let (mut app, _) = test_app();
+                    app.desktop.settings.language = language;
+                    crate::locale::set_language(language);
+                    app.state.user = Some(mock::mock_user());
+                    app.state.timetable = mock::mock_timetable();
+                    app.state.announcements = mock::mock_announcements();
+                    app.state.assignments = mock::mock_assignments();
+                    app.state.homework = mock::mock_homework();
+                    app.state.connection = ConnectionState::SessionExpired;
+                    app.state.sync_errors.insert("timetable".into(), "network unavailable".into());
+                    app.state.selected_page = *page;
+                    let ctx = egui::Context::default();
+                    theme::apply_theme(&ctx);
+                    let input = egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 760.0),
+                        )),
+                        ..Default::default()
+                    };
+                    let output = ctx.run(input, |ctx| app.planner_ui(ctx));
+                    let text = painted_text(&output);
+                    assert!(!text.contains("Open INNA ↗"), "the corner must not open a browser");
+                    let reconnect = match language {
+                        Language::English => "Reconnect to INNA",
+                        Language::Icelandic => "Tengjast INNU aftur",
+                    };
+                    assert!(text.contains(reconnect), "{language:?} {page:?}: no reconnect button");
+                    // The current page's name is always in the top bar.
+                    assert!(text.lines().any(|line| line == page.label()), "{language:?} {page:?}: no page name");
+                    if language == Language::Icelandic {
+                        for english in ["Refresh", "Reconnect to INNA", "Timetable", "Overview"] {
+                            assert!(!text.lines().any(|line| line == english), "{page:?}: {english:?} left in English");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

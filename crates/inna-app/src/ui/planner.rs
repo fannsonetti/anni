@@ -1,4 +1,5 @@
 use crate::planner::{self, WorkFilter, WorkItem, WorkKind};
+use crate::locale::t;
 use crate::state::AppState;
 use crate::ui::theme::*;
 use chrono::Utc;
@@ -7,19 +8,19 @@ use egui::{RichText, Ui};
 pub fn show(ui: &mut Ui, state: &mut AppState) {
     page_title(
         ui,
-        "Schoolwork",
-        "Assignments, tests, and homework from INNA. Local checkmarks track your progress; submit work in INNA.",
+        t("Schoolwork", "Skólavinna"),
+        t("Assignments, tests, and homework from INNA. Local checkmarks track your progress; submit work in INNA.", "Verkefni, próf og heimavinna úr INNU. Hökin halda utan um framvinduna á tölvunni; skilaðu verkefnum í INNU."),
     );
-    ui.hyperlink_to("Open INNA for submissions ↗", "https://nam.inna.is/");
+    ui.hyperlink_to(t("Open INNA for submissions ↗", "Opna INNU til að skila ↗"), "https://nam.inna.is/");
     ui.add_space(12.0);
     let today = Utc::now().date_naive();
     let items = planner::work_items(state);
     ui.horizontal_wrapped(|ui| {
         for (filter, label) in [
-            (WorkFilter::Open, "Open"),
-            (WorkFilter::Today, "Today & overdue"),
-            (WorkFilter::Week, "Next 7 days"),
-            (WorkFilter::Done, "Done"),
+            (WorkFilter::Open, t("Open", "Opið")),
+            (WorkFilter::Today, t("Today & overdue", "Í dag og komið fram yfir")),
+            (WorkFilter::Week, t("Next 7 days", "Næstu 7 dagar")),
+            (WorkFilter::Done, t("Done", "Lokið")),
         ] {
             let count = items.iter().filter(|i| filter.matches(i, today)).count();
             if ui
@@ -36,15 +37,15 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     });
     if let Some(date) = state.work_date {
         ui.horizontal(|ui| {
-            badge(ui, &crate::locale::day(date), ACCENT);
-            if ui.small_button("Show all days").clicked() {
+            badge(ui, &crate::locale::capitalize(&crate::locale::day(date)), ACCENT);
+            if ui.small_button(t("Show all days", "Sýna alla daga")).clicked() {
                 state.work_date = None;
             }
         });
     }
     ui.add(
         egui::TextEdit::singleline(&mut state.work_search)
-            .hint_text("Search tasks or courses…")
+            .hint_text(t("Search tasks or courses…", "Leita að verkefnum eða áföngum…"))
             .margin(egui::vec2(10.0, 8.0))
             .desired_width(f32::INFINITY),
     );
@@ -65,9 +66,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         .collect();
     if visible.is_empty() {
         ui.add_space(20.0);
-        ui.label(RichText::new("No tasks in this view").size(20.0));
+        ui.label(RichText::new(t("No tasks in this view", "Engin verkefni í þessari sýn")).size(20.0));
         ui.label(
-            RichText::new("Choose Open or adjust your search.")
+            RichText::new(t("Choose Open or adjust your search.", "Veldu Opið eða breyttu leitinni."))
                 .size(15.0)
                 .color(TEXT_SECONDARY),
         );
@@ -77,13 +78,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     }
     ui.add_space(10.0);
     ui.label(
-        RichText::new("Checkmarks track your local plan. Submit schoolwork in INNA.")
+        RichText::new(t("Checkmarks track your local plan. Submit schoolwork in INNA.", "Hökin halda utan um skipulagið á tölvunni. Skilaðu skólavinnu í INNU."))
             .size(13.0)
             .color(TEXT_SECONDARY),
     );
     if !state.last_sync.contains_key("assignments") {
         ui.label(
-            RichText::new("Connect INNA and refresh to get schoolwork.")
+            RichText::new(t("Connect INNA and refresh to get schoolwork.", "Tengdu INNU og uppfærðu til að sækja skólavinnu."))
                 .size(14.0)
                 .color(WARNING),
         );
@@ -136,20 +137,20 @@ pub fn work_card(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
                         ui.label(
                             RichText::new(
                                 if matches!(item.kind, WorkKind::Assignment | WorkKind::Exam) {
-                                    "Submitted or graded in INNA"
+                                    t("Submitted or graded in INNA", "Skilað eða metið í INNU")
                                 } else {
-                                    "Completed in INNA"
+                                    t("Completed in INNA", "Lokið í INNU")
                                 },
                             )
                             .size(13.0)
                             .color(SUCCESS),
                         );
                     } else if item.done {
-                        ui.label(RichText::new("Completed by you").size(13.0).color(SUCCESS));
+                        ui.label(RichText::new(t("Completed by you", "Þú merktir sem lokið")).size(13.0).color(SUCCESS));
                     } else {
                         let label = format!(
                             "{}{}",
-                            if overdue { "Overdue · " } else { "" },
+                            if overdue { t("Overdue · ", "Komið fram yfir · ") } else { "" },
                             item.due_label(now.date())
                         );
                         ui.label(RichText::new(label).size(13.0).color(if overdue {
@@ -162,7 +163,7 @@ pub fn work_card(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
                     }
                 });
                 if !item.detail.is_empty() {
-                    egui::CollapsingHeader::new("Details")
+                    egui::CollapsingHeader::new(t("Details", "Nánar"))
                         .id_salt(&item.key)
                         .show(ui, |ui| {
                             ui.label(&item.detail);

@@ -107,6 +107,7 @@ impl Desktop {
         if desktop_only {
             settings.enabled = true;
         }
+        crate::locale::set_language(settings.language);
         let startup = if mock {
             false
         } else {
@@ -239,12 +240,28 @@ impl Desktop {
     pub fn settings_ui(&mut self, ui: &mut egui::Ui, mock: bool) -> DesktopAction {
         use crate::settings::{ClockStyle, DesktopAccent, DesktopSide, DesktopTheme};
         use ui::theme::*;
+        use crate::locale::{t, Language};
         let mut action = DesktopAction::None;
 
-        section(ui, "General", |ui| {
+        section(ui, "Language · Tungumál", |ui| {
+            setting_row(ui, t("App language", "Tungumál forritsins"), |ui| {
+                egui::ComboBox::from_id_salt("language")
+                    .width(200.0)
+                    .selected_text(self.settings.language.native_name())
+                    .show_ui(ui, |ui| {
+                        for language in Language::ALL {
+                            ui.selectable_value(&mut self.settings.language, language, language.native_name());
+                        }
+                    });
+            });
+            hint(ui, t("Changes the language everywhere in Anni, including the desktop widgets.", "Breytir tungumálinu alls staðar í Anni, líka í skjáborðsgræjunum."));
+        });
+        crate::locale::set_language(self.settings.language);
+
+        section(ui, t("General", "Almennt"), |ui| {
             if cfg!(windows) {
                 let mut startup = self.startup;
-                setting_row(ui, "Start with Windows", |ui| {
+                setting_row(ui, t("Start with Windows", "Ræsa með Windows"), |ui| {
                     if ui.add_enabled(!mock, egui::Checkbox::new(&mut startup, "")).changed() {
                         match platform::set_startup(startup) {
                             Ok(()) => {
@@ -262,16 +279,16 @@ impl Desktop {
                     || self.settings.show_clock
                     || self.settings.show_progress);
             ui.horizontal_wrapped(|ui| {
-                if ui.add_enabled(has_widgets, primary_button("Show desktop widgets")).clicked() {
+                if ui.add_enabled(has_widgets, primary_button(t("Show desktop widgets", "Sýna skjáborðsgræjur"))).clicked() {
                     action = DesktopAction::HidePlanner;
                 }
-                if ui.button("Quit Anni").clicked() {
+                if ui.button(t("Quit Anni", "Loka Anni")).clicked() {
                     action = DesktopAction::Quit;
                 }
             });
-            hint(ui, "Anni lives in the notification area by the clock: click its icon to open the planner, or right-click it to quit. Minimizing or Show desktop widgets tucks the planner away there; closing the window quits Anni and its widgets.");
+            hint(ui, t("Anni lives in the notification area by the clock: click its icon to open the planner, or right-click it to quit. Minimizing or Show desktop widgets tucks the planner away there; closing the window quits Anni and its widgets.", "Anni býr á tilkynningasvæðinu við klukkuna: smelltu á táknið til að opna skipulagið eða hægrismelltu til að loka. Að lágmarka eða velja Sýna skjáborðsgræjur geymir skipulagið þar; að loka glugganum lokar Anni og græjunum."));
             if mock {
-                ui.label(RichText::new("Demo mode · preferences are temporary and startup is disabled.").size(12.0).color(WARNING));
+                ui.label(RichText::new(t("Demo mode · preferences are temporary and startup is disabled.", "Sýnishorn · stillingar eru tímabundnar og ræsing er óvirk.")).size(12.0).color(WARNING));
             }
             if let Some(error) = &self.error {
                 ui.colored_label(WARNING, error);
@@ -279,8 +296,8 @@ impl Desktop {
         });
 
         let settings = &mut self.settings;
-        section(ui, "Appearance", |ui| {
-            ui.label("Theme");
+        section(ui, t("Appearance", "Útlit"), |ui| {
+            ui.label(t("Theme", "Þema"));
             ui.add_space(2.0);
             ui.columns(DesktopTheme::ALL.len(), |columns| {
                 for (column, theme) in columns.iter_mut().zip(DesktopTheme::ALL) {
@@ -290,7 +307,7 @@ impl Desktop {
                 }
             });
             ui.add_space(6.0);
-            setting_row(ui, "Accent", |ui| {
+            setting_row(ui, t("Accent", "Áherslulitur"), |ui| {
                 egui::ComboBox::from_id_salt("accent")
                     .width(200.0)
                     .selected_text(accent_label(settings.accent))
@@ -301,65 +318,65 @@ impl Desktop {
                     });
             });
             if settings.accent == DesktopAccent::Custom {
-                setting_row(ui, "Custom accent", |ui| {
+                setting_row(ui, t("Custom accent", "Eigin áherslulitur"), |ui| {
                     ui.color_edit_button_srgb(&mut settings.custom_accent);
                 });
             }
-            setting_row(ui, "Text size", |ui| {
+            setting_row(ui, t("Text size", "Leturstærð"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.text_scale, 85..=140).suffix(" %"));
             });
-            setting_row(ui, "Background opacity", |ui| {
+            setting_row(ui, t("Background opacity", "Ógegnsæi bakgrunns"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.panel_opacity, 0..=80).suffix(" %"));
             });
-            setting_row(ui, "Corner rounding", |ui| {
+            setting_row(ui, t("Corner rounding", "Rúnnun horna"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.corner_radius, 0..=24).suffix(" px"));
             });
-            setting_check(ui, "Widget borders", &mut settings.show_borders);
+            setting_check(ui, t("Widget borders", "Rammar um græjur"), &mut settings.show_borders);
         });
 
-        section(ui, "Desktop widgets", |ui| {
-            setting_check(ui, "Show desktop widgets", &mut settings.enabled);
-            setting_check(ui, "Schedule", &mut settings.show_schedule);
-            setting_check(ui, "Assignments", &mut settings.show_homework);
-            setting_check(ui, "Day progress bar", &mut settings.show_progress);
-            setting_check(ui, "Clock", &mut settings.show_clock);
-            setting_row(ui, "Assignments side", |ui| {
+        section(ui, t("Desktop widgets", "Skjáborðsgræjur"), |ui| {
+            setting_check(ui, t("Show desktop widgets", "Sýna skjáborðsgræjur"), &mut settings.enabled);
+            setting_check(ui, t("Schedule", "Stundaskrá"), &mut settings.show_schedule);
+            setting_check(ui, t("Assignments", "Verkefni"), &mut settings.show_homework);
+            setting_check(ui, t("Day progress bar", "Framvindustika dagsins"), &mut settings.show_progress);
+            setting_check(ui, t("Clock", "Klukka"), &mut settings.show_clock);
+            setting_row(ui, t("Assignments side", "Hlið verkefna"), |ui| {
                 egui::ComboBox::from_id_salt("side")
                     .width(200.0)
-                    .selected_text(if settings.side == DesktopSide::Left { "Left" } else { "Right" })
+                    .selected_text(if settings.side == DesktopSide::Left { t("Left", "Vinstri") } else { t("Right", "Hægri") })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut settings.side, DesktopSide::Left, "Left");
-                        ui.selectable_value(&mut settings.side, DesktopSide::Right, "Right");
+                        ui.selectable_value(&mut settings.side, DesktopSide::Left, t("Left", "Vinstri"));
+                        ui.selectable_value(&mut settings.side, DesktopSide::Right, t("Right", "Hægri"));
                     });
             });
-            setting_row(ui, "Width", |ui| {
+            setting_row(ui, t("Width", "Breidd"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.panel_width, 280..=480).suffix(" px"));
             });
-            setting_row(ui, "Height", |ui| {
+            setting_row(ui, t("Height", "Hæð"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.panel_height, 360..=800).suffix(" px"));
             });
-            setting_row(ui, "Vertical position", |ui| {
+            setting_row(ui, t("Vertical position", "Lóðrétt staðsetning"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.vertical_position, 0..=100).suffix(" %"));
             });
-            setting_row(ui, "Row spacing", |ui| {
+            setting_row(ui, t("Row spacing", "Línubil"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.row_spacing, 4..=24).suffix(" px"));
             });
         });
 
-        section(ui, "Assignments", |ui| {
-            setting_check(ui, "Exams (Próf)", &mut settings.include_exams);
-            setting_check(ui, "INNA reminders", &mut settings.include_reminders);
-            setting_check(ui, "Course codes", &mut settings.show_course_codes);
-            setting_check(ui, "Deadlines", &mut settings.show_deadlines);
-            hint(ui, "Click an assignment on the desktop to cross it off. It hides a day later; click it again to undo.");
+        section(ui, t("Assignments", "Verkefni"), |ui| {
+            setting_check(ui, t("Exams (Próf)", "Próf"), &mut settings.include_exams);
+            setting_check(ui, t("INNA reminders", "Áminningar úr INNU"), &mut settings.include_reminders);
+            setting_check(ui, t("Course codes", "Áfangaheiti"), &mut settings.show_course_codes);
+            setting_check(ui, t("Deadlines", "Skilafrestir"), &mut settings.show_deadlines);
+            hint(ui, t("Click an assignment on the desktop to cross it off. It hides a day later; click it again to undo.", "Smelltu á verkefni á skjáborðinu til að strika það út. Það hverfur degi síðar; smelltu aftur til að afturkalla."));
         });
 
-        section(ui, "Clock", |ui| {
-            setting_row(ui, "Style", |ui| {
+        section(ui, t("Clock", "Klukka"), |ui| {
+            setting_row(ui, t("Style", "Stíll"), |ui| {
                 let label = |style| match style {
-                    ClockStyle::Reactor => "Digital with ring",
-                    ClockStyle::Digital => "Minimal digital",
-                    ClockStyle::Analog => "Analog",
+                    ClockStyle::Reactor => t("Digital with ring", "Stafræn með hring"),
+                    ClockStyle::Digital => t("Minimal digital", "Einföld stafræn"),
+                    ClockStyle::Analog => t("Analog", "Skífuklukka"),
                 };
                 egui::ComboBox::from_id_salt("clock_style")
                     .width(200.0)
@@ -370,14 +387,14 @@ impl Desktop {
                         }
                     });
             });
-            setting_row(ui, "Size", |ui| {
+            setting_row(ui, t("Size", "Stærð"), |ui| {
                 ui.add(egui::Slider::new(&mut settings.clock_scale, 80..=180).suffix(" %"));
             });
-            setting_check(ui, "Date", &mut settings.show_date);
-            setting_check(ui, "Seconds", &mut settings.show_seconds);
+            setting_check(ui, t("Date", "Dagsetning"), &mut settings.show_date);
+            setting_check(ui, t("Seconds", "Sekúndur"), &mut settings.show_seconds);
         });
-        if ui.button("Reset appearance").clicked() {
-            *settings = DesktopSettings { enabled: settings.enabled, ..Default::default() };
+        if ui.button(t("Reset appearance", "Endurstilla útlit")).clicked() {
+            *settings = DesktopSettings { enabled: settings.enabled, language: settings.language, ..Default::default() };
         }
         ui.add_space(12.0);
         action
@@ -385,14 +402,15 @@ impl Desktop {
 }
 
 fn accent_label(accent: crate::settings::DesktopAccent) -> &'static str {
+    use crate::locale::t;
     use crate::settings::DesktopAccent::*;
     match accent {
-        Theme => "Theme",
-        Ice => "Ice",
-        Mint => "Mint",
-        Lavender => "Lavender",
-        White => "White",
-        Custom => "Custom",
+        Theme => t("Theme", "Þema"),
+        Ice => t("Ice", "Ís"),
+        Mint => t("Mint", "Mynta"),
+        Lavender => t("Lavender", "Lofnarblóm"),
+        White => t("White", "Hvítt"),
+        Custom => t("Custom", "Eigið"),
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     grades::{self, GradeSummary, Standing},
-    locale,
+    locale::{self, t},
     planner::{self, WorkFilter, WorkItem},
     state::{AppState, Page},
     ui::{assignments, theme::*},
@@ -36,29 +36,30 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         .as_ref()
         .and_then(|u| u.display_name().split_whitespace().next());
     let greeting = match now.hour() {
-        0..=11 => "Good morning",
-        12..=17 => "Good afternoon",
-        _ => "Good evening",
+        0..=11 => t("Good morning", "Góðan daginn"),
+        12..=17 => t("Good afternoon", "Góðan dag"),
+        _ => t("Good evening", "Gott kvöld"),
     };
     ui.label(
         RichText::new(
             name.map(|n| format!("{greeting}, {n}"))
-                .unwrap_or_else(|| "Your school, at a glance".into()),
+                .unwrap_or_else(|| t("Your school, at a glance", "Skólinn þinn í hnotskurn").into()),
         )
         .size(28.0)
         .family(crate::ui::theme::semibold()),
     );
     ui.add_space(3.0);
     let summary = if overdue > 0 {
-        format!(
+        tr!(
             "{} overdue · {} due today.",
+            "{} komin fram yfir · {} á að skila í dag.",
             locale::number(overdue),
             locale::number(due_today)
         )
     } else if due_today > 0 {
-        format!("{} due today.", locale::counted(due_today, "task", "tasks"))
+        tr!("{} due today.", "{} á að skila í dag.", locale::counted(due_today, ("task", "tasks"), ("verkefni", "verkefni")))
     } else {
-        "No deadlines today. Here's what's coming up.".into()
+        t("No deadlines today. Here's what's coming up.", "Engir skilafrestir í dag. Hér er það sem er fram undan.").into()
     };
     ui.label(RichText::new(summary).size(14.0).color(TEXT_SECONDARY));
     ui.add_space(20.0);
@@ -71,9 +72,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         .count();
     ui.columns(3, |columns| {
         for (index, (label, count)) in [
-            ("Courses & grades", course_count),
-            ("Unread notices", unread),
-            ("Due today", due_today),
+            (t("Courses & grades", "Áfangar og einkunnir"), course_count),
+            (t("Unread notices", "Ólesnar tilkynningar"), unread),
+            (t("Due today", "Skil í dag"), due_today),
         ]
         .into_iter()
         .enumerate()
@@ -187,7 +188,7 @@ fn divider(ui: &mut Ui) {
 fn priority_queue(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        if section(ui, "Schoolwork & deadlines", "View all →") {
+        if section(ui, t("Schoolwork & deadlines", "Skólavinna og skilafrestir"), t("View all →", "Sjá allt →")) {
             open_work(state, WorkFilter::Open);
         }
         ui.add_space(10.0);
@@ -199,9 +200,9 @@ fn priority_queue(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
             ui.spacing_mut().button_padding = vec2(10.0, 6.0);
             ui.horizontal_wrapped(|ui| {
                 for (v, label) in [
-                    (QueueView::Upcoming, "Upcoming"),
-                    (QueueView::Today, "Due today"),
-                    (QueueView::Overdue, "Overdue"),
+                    (QueueView::Upcoming, t("Upcoming", "Fram undan")),
+                    (QueueView::Today, t("Due today", "Skil í dag")),
+                    (QueueView::Overdue, t("Overdue", "Komið fram yfir")),
                 ] {
                     ui.selectable_value(&mut view, v, label);
                 }
@@ -226,19 +227,19 @@ fn priority_queue(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
             ui.add_space(23.0);
             ui.label(
                 RichText::new(match view {
-                    QueueView::Upcoming => "You're all caught up.",
-                    QueueView::Today => "Nothing due today.",
-                    QueueView::Overdue => "No overdue work.",
+                    QueueView::Upcoming => t("You're all caught up.", "Allt er klárt."),
+                    QueueView::Today => t("Nothing due today.", "Ekkert á að skila í dag."),
+                    QueueView::Overdue => t("No overdue work.", "Ekkert komið fram yfir."),
                 })
                 .size(20.0),
             );
             ui.label(
-                RichText::new("Assignments, tests, and homework from INNA appear here.")
+                RichText::new(t("Assignments, tests, and homework from INNA appear here.", "Verkefni, próf og heimavinna úr INNU birtast hér."))
                     .size(13.0)
                     .color(TEXT_SECONDARY),
             );
             ui.add_space(14.0);
-            if ui.button("Open schoolwork →").clicked() {
+            if ui.button(t("Open schoolwork →", "Opna skólavinnu →")).clicked() {
                 open_work(state, WorkFilter::Open);
             }
             ui.add_space(9.0);
@@ -254,7 +255,7 @@ fn priority_queue(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
             if ui
                 .add(
                     egui::Button::new(
-                        RichText::new("Open all schoolwork →")
+                        RichText::new(t("Open all schoolwork →", "Opna alla skólavinnu →"))
                             .size(12.0)
                             .color(ACCENT),
                     )
@@ -295,7 +296,7 @@ fn task_row(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
     let check = egui::Rect::from_min_size(rect.min + vec2(0.0, 17.0), vec2(27.0, 29.0));
     if ui
         .put(check, egui::Checkbox::without_text(&mut done))
-        .on_hover_text("Mark complete in your local plan")
+        .on_hover_text(t("Mark complete in your local plan", "Merkja sem lokið í þínu skipulagi"))
         .changed()
     {
         item.set_done(&mut state.planner, done);
@@ -321,7 +322,7 @@ fn task_row(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
             TEXT_DIM,
         );
     let due = if overdue {
-        "Overdue".into()
+        t("Overdue", "Komið fram yfir").into()
     } else {
         compact_due(item, now.date())
     };
@@ -352,17 +353,17 @@ fn task_row(ui: &mut Ui, state: &mut AppState, item: &WorkItem) {
 fn compact_due(item: &WorkItem, today: chrono::NaiveDate) -> String {
     let Some(d) = item.deadline else {
         return if item.due_text.is_empty() {
-            "No due date".into()
+            t("No due date", "Enginn skilafrestur").into()
         } else {
             item.due_text.clone()
         };
     };
     let days = (d.at.date() - today).num_days();
     let date = match days {
-        0 => "Today".into(),
-        1 => "Tomorrow".into(),
-        -1 => "Yesterday".into(),
-        _ => d.at.format("%d %b").to_string(),
+        0 => t("Today", "Í dag").into(),
+        1 => t("Tomorrow", "Á morgun").into(),
+        -1 => t("Yesterday", "Í gær").into(),
+        _ => locale::short_day_month(d.at.date()),
     };
     if d.has_time {
         format!("{date} · {}", d.at.format("%H:%M"))
@@ -381,9 +382,9 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(if live {
-                    "IN CLASS NOW"
+                    t("IN CLASS NOW", "Í TÍMA NÚNA")
                 } else {
-                    "YOUR NEXT CLASS"
+                    t("YOUR NEXT CLASS", "NÆSTI TÍMI")
                 })
                 .size(10.0)
                 .family(crate::ui::theme::semibold())
@@ -401,12 +402,12 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
                 .map(|s| {
                     let days = (s.date() - now.date()).num_days();
                     match days {
-                        0 => "Today".into(),
-                        1 => format!("Tomorrow · {}", locale::weekday(s.date())),
-                        _ => locale::day(s.date()),
+                        0 => t("Today", "Í dag").into(),
+                        1 => tr!("Tomorrow · {}", "Á morgun · {}", locale::weekday(s.date())),
+                        _ => locale::capitalize(&locale::day(s.date())),
                     }
                 })
-                .unwrap_or_else(|| "Next scheduled lesson".into());
+                .unwrap_or_else(|| t("Next scheduled lesson", "Næsti skráði tími").into());
             ui.label(RichText::new(date).size(12.0).color(TEXT_SECONDARY));
             ui.label(RichText::new(lesson.time_range()).size(30.0));
             ui.add_space(11.0);
@@ -423,7 +424,7 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
             ui.add_space(11.0);
             ui.horizontal_wrapped(|ui| {
                 if !lesson.room().is_empty() {
-                    badge(ui, &format!("Room {}", lesson.room()), ACCENT);
+                    badge(ui, &tr!("Room {}", "Stofa {}", lesson.room()), ACCENT);
                 }
                 if !lesson.teacher_str().is_empty() {
                     ui.label(
@@ -436,7 +437,7 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
             ui.add_space(13.0);
             if ui
                 .add(
-                    egui::Button::new(RichText::new("Open timetable →").size(12.0).color(ACCENT))
+                    egui::Button::new(RichText::new(t("Open timetable →", "Opna stundatöflu →")).size(12.0).color(ACCENT))
                         .frame(false),
                 )
                 .clicked()
@@ -447,19 +448,19 @@ fn next_lesson(ui: &mut Ui, state: &mut AppState) {
                 state.navigate(Page::Timetable);
             }
         } else {
-            ui.label(RichText::new("No upcoming classes").size(24.0));
+            ui.label(RichText::new(t("No upcoming classes", "Engir tímar fram undan")).size(24.0));
             ui.add_space(5.0);
             ui.label(
                 RichText::new(if state.last_sync.contains_key("timetable") {
-                    "No upcoming lessons in your saved timetable."
+                    t("No upcoming lessons in your saved timetable.", "Engir tímar fram undan í vistuðu stundatöflunni.")
                 } else {
-                    "Connect INNA to see your next class."
+                    t("Connect INNA to see your next class.", "Tengdu INNU til að sjá næsta tíma.")
                 })
                 .size(13.0)
                 .color(TEXT_SECONDARY),
             );
             ui.add_space(12.0);
-            if ui.button("Open timetable →").clicked() {
+            if ui.button(t("Open timetable →", "Opna stundatöflu →")).clicked() {
                 state.navigate(Page::Timetable);
             }
         }
@@ -481,7 +482,7 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new("The next 7 days")
+                RichText::new(t("The next 7 days", "Næstu 7 dagar"))
                     .size(17.0)
                     .family(crate::ui::theme::semibold()),
             );
@@ -489,8 +490,8 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
                 ui.label(
                     RichText::new(locale::counted(
                         counts.iter().sum(),
-                        "deadline",
-                        "deadlines",
+                        ("deadline", "deadlines"),
+                        ("skilafrestur", "skilafrestir"),
                     ))
                     .size(11.0)
                     .color(TEXT_DIM),
@@ -527,9 +528,9 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
                     r.center_top() + vec2(0.0, 17.0),
                     egui::Align2::CENTER_CENTER,
                     if today_tile {
-                        "Today".to_string()
+                        t("Today", "Í dag").to_string()
                     } else {
-                        date.format("%a").to_string()
+                        locale::short_weekday(date).to_string()
                     },
                     FontId::proportional(10.0),
                     c,
@@ -559,8 +560,8 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
                 if response
                     .on_hover_text(format!(
                         "{} · {}",
-                        locale::day(date),
-                        locale::counted(counts[i], "deadline", "deadlines")
+                        locale::capitalize(&locale::day(date)),
+                        locale::counted(counts[i], ("deadline", "deadlines"), ("skilafrestur", "skilafrestir"))
                     ))
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
@@ -576,7 +577,7 @@ fn week(ui: &mut Ui, state: &mut AppState, items: &[WorkItem]) {
 fn courses(ui: &mut Ui, state: &mut AppState) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        if section(ui, "Course snapshot", "All →") {
+        if section(ui, t("Course snapshot", "Áfangar í hnotskurn"), t("All →", "Allir →")) {
             state.navigate(Page::Assignments);
         }
         ui.add_space(11.0);
@@ -585,7 +586,7 @@ fn courses(ui: &mut Ui, state: &mut AppState) {
         let modules = assignments::modules(state);
         if modules.is_empty() {
             ui.label(
-                RichText::new("Connect INNA to see your grades.")
+                RichText::new(t("Connect INNA to see your grades.", "Tengdu INNU til að sjá einkunnirnar."))
                     .size(13.0)
                     .color(TEXT_SECONDARY),
             );
@@ -625,7 +626,7 @@ fn courses(ui: &mut Ui, state: &mut AppState) {
         }
         ui.add_space(12.0);
         ui.label(
-            RichText::new(format!("{} · out of 10", view.label()))
+            RichText::new(tr!("{} · out of 10", "{} · af 10", view.label()))
                 .size(10.0)
                 .color(TEXT_DIM),
         );
@@ -635,7 +636,7 @@ fn courses(ui: &mut Ui, state: &mut AppState) {
 fn schedule(ui: &mut Ui, state: &mut AppState) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        if section(ui, "Today's classes", "Timetable →") {
+        if section(ui, t("Today's classes", "Tímar dagsins"), t("Timetable →", "Stundatafla →")) {
             state.selected_date = Utc::now().date_naive();
             state.navigate(Page::Timetable);
         }
@@ -644,9 +645,9 @@ fn schedule(ui: &mut Ui, state: &mut AppState) {
         if lessons.is_empty() {
             ui.label(
                 RichText::new(if state.last_sync.contains_key("timetable") {
-                    "No classes scheduled today."
+                    t("No classes scheduled today.", "Engir tímar í dag.")
                 } else {
-                    "Connect INNA and refresh to see your timetable."
+                    t("Connect INNA and refresh to see your timetable.", "Tengdu INNU og uppfærðu til að sjá stundatöfluna.")
                 })
                 .size(13.0)
                 .color(TEXT_SECONDARY),
@@ -663,7 +664,7 @@ fn schedule(ui: &mut Ui, state: &mut AppState) {
                 ui.label(RichText::new(assignments::subject(lesson.course_code())).size(13.0));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(
-                        RichText::new(format!("Room {}", lesson.room()))
+                        RichText::new(tr!("Room {}", "Stofa {}", lesson.room()))
                             .size(11.0)
                             .color(TEXT_DIM),
                     );
@@ -677,13 +678,13 @@ fn schedule(ui: &mut Ui, state: &mut AppState) {
 fn news(ui: &mut Ui, state: &mut AppState) {
     surface().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        if section(ui, "From your school", "All updates →") {
+        if section(ui, t("From your school", "Frá skólanum"), t("All updates →", "Allar tilkynningar →")) {
             state.navigate(Page::Announcements);
         }
         ui.add_space(10.0);
         if state.announcements.is_empty() {
             ui.label(
-                RichText::new("No announcements yet.")
+                RichText::new(t("No announcements yet.", "Engar tilkynningar enn."))
                     .size(13.0)
                     .color(TEXT_SECONDARY),
             );
@@ -739,7 +740,8 @@ mod tests {
 
     #[test]
     fn dashboard_keeps_long_titles_within_narrow_and_wide_windows() {
-        for width in [700.0, 1004.0, 1300.0] {
+        for (language, width) in crate::locale::Language::ALL.into_iter().flat_map(|l| [700.0, 1004.0, 1300.0].map(|w| (l, w))) {
+            crate::locale::set_language(language);
             let ctx = egui::Context::default();
             crate::ui::theme::apply_theme(&ctx);
             let mut state = AppState::new();

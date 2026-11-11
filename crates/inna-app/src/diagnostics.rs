@@ -448,27 +448,46 @@ pub fn failure(resource: Resource, category: Failure) {
     record(Event::Failure { resource, category });
 }
 
+/// Status lines are stored in English by the background threads and shown in the app language.
+fn status_text(status: &str) -> &str {
+    use crate::locale::t;
+    match status {
+        "Waiting for the hourly upload" => t("Waiting for the hourly upload", "Bíð eftir sendingu á klukkutíma fresti"),
+        "Storage is off" => t("Storage is off", "Geymsla er óvirk"),
+        "Could not store this computer's reports" => t("Could not store this computer's reports", "Ekki tókst að geyma skýrslur þessarar tölvu"),
+        "Storage is offline or unavailable; retrying in one hour" => t("Storage is offline or unavailable; retrying in one hour", "Geymslan er ótengd eða ekki tiltæk; reyni aftur eftir klukkutíma"),
+        "Could not save delivery status" => t("Could not save delivery status", "Ekki tókst að vista stöðu sendingar"),
+        "Reports delivered" => t("Reports delivered", "Skýrslur sendar"),
+        "Receiving bug reports on port 3000" => t("Receiving bug reports on port 3000", "Tek við villuskýrslum á gátt 3000"),
+        "Could not listen on port 3000; another program may be using it" => t("Could not listen on port 3000; another program may be using it", "Ekki tókst að hlusta á gátt 3000; annað forrit gæti verið að nota hana"),
+        "Could not save diagnostic logs" => t("Could not save diagnostic logs", "Ekki tókst að vista greiningarskrár"),
+        "Could not save bug report preferences" => t("Could not save bug report preferences", "Ekki tókst að vista stillingar villuskýrslna"),
+        other => other,
+    }
+}
+
 pub fn settings_ui(ui: &mut egui::Ui, mock: bool) {
+    use crate::locale::t;
     crate::ui::theme::card().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
-        ui.label(egui::RichText::new("Bug reports").size(15.0).family(crate::ui::theme::semibold()));
-        ui.label("Logs help find refresh failures, missing course labels, and calendar entries mistaken for classes. They include an anonymous device ID, app version, counts, and error categories. Names, grades, full schedules, passwords, and cookies are excluded.");
-        if mock { ui.label("Demo mode: bug logging is disabled."); return; }
+        ui.label(egui::RichText::new(t("Bug reports", "Villuskýrslur")).size(15.0).family(crate::ui::theme::semibold()));
+        ui.label(t("Logs help find refresh failures, missing course labels, and calendar entries mistaken for classes. They include an anonymous device ID, app version, counts, and error categories. Names, grades, full schedules, passwords, and cookies are excluded.", "Skrárnar hjálpa til við að finna villur í uppfærslu, áfanga án heitis og dagatalsfærslur sem eru taldar vera tímar. Þær innihalda nafnlaust tækjanúmer, útgáfu forritsins, fjölda og flokka villna. Nöfn, einkunnir, heilar stundatöflur, lykilorð og vafrakökur eru ekki með."));
+        if mock { ui.label(t("Demo mode: bug logging is disabled.", "Sýnishorn: skráning villna er óvirk.")); return; }
         if let Some(reporter) = REPORTER.get() {
             let mut journal = reporter.journal.lock().unwrap();
-            let changed = ui.checkbox(&mut journal.share, "Send bug reports when the storage computer is online").changed();
-            let host_changed = ui.checkbox(&mut journal.storage_computer, "Use this computer to store everyone's bug reports").changed();
+            let changed = ui.checkbox(&mut journal.share, t("Send bug reports when the storage computer is online", "Senda villuskýrslur þegar geymslutölvan er tengd")).changed();
+            let host_changed = ui.checkbox(&mut journal.storage_computer, t("Use this computer to store everyone's bug reports", "Nota þessa tölvu til að geyma villuskýrslur allra")).changed();
             if (changed || host_changed) && journal.save(&reporter.path).is_err() {
                 *reporter.status.lock().unwrap() = "Could not save bug report preferences".into();
             }
-            ui.label("Reports wait here and retry every hour at 85.220.66.209:3000. The latest 500 events are kept on each computer.");
-            ui.label(if journal.share { reporter.status.lock().unwrap().clone() } else { "Sharing is off. Logs stay here.".into() });
+            ui.label(t("Reports wait here and retry every hour at 85.220.66.209:3000. The latest 500 events are kept on each computer.", "Skýrslur bíða hér og reynt er aftur á klukkutíma fresti á 85.220.66.209:3000. Síðustu 500 atburðir eru geymdir á hverri tölvu."));
+            ui.label(if journal.share { status_text(&reporter.status.lock().unwrap()).to_string() } else { t("Sharing is off. Logs stay here.", "Deiling er óvirk. Skrárnar haldast hér.").into() });
             if journal.storage_computer {
-                ui.label(reporter.server_status.lock().unwrap().clone());
-                ui.label("Forward your router's TCP port 3000 to this PC and allow Anni through Windows Firewall. Keep Anni or its desktop widgets running to receive reports.");
-                ui.label(format!("Reports folder: {}", reporter.path.parent().unwrap().join("received-reports").display()));
+                ui.label(status_text(&reporter.server_status.lock().unwrap()).to_string());
+                ui.label(t("Forward your router's TCP port 3000 to this PC and allow Anni through Windows Firewall. Keep Anni or its desktop widgets running to receive reports.", "Áframsendu TCP-gátt 3000 á beininum á þessa tölvu og leyfðu Anni í Windows Firewall. Hafðu Anni eða skjáborðsgræjurnar í gangi til að taka við skýrslum."));
+                ui.label(tr!("Reports folder: {}", "Skýrslumappa: {}", reporter.path.parent().unwrap().join("received-reports").display()));
             }
-            if ui.button("Copy diagnostic log").clicked() {
+            if ui.button(t("Copy diagnostic log", "Afrita greiningarskrá")).clicked() {
                 if let Ok(log) = serde_json::to_string_pretty(&*journal) { ui.output_mut(|output| output.copied_text = log); }
             }
         }

@@ -107,13 +107,12 @@ pub async fn start_phone_auth() -> Result<PhoneAuthHandle, String> {
 
 async fn landing(State(state): State<ProxyState>) -> Html<String> {
     if state.done.load(Ordering::SeqCst) {
-        return Html(
+        return Html(localize_page(
             "<html><body style='font-family:sans-serif;background:#f2f5fa;color:#1b2b42;padding:2rem'>\
-             <h1 style='color:#197a57'>Connected</h1><p>You can close this tab.</p></body></html>"
-                .into(),
-        );
+             <h1 style='color:#197a57'>Connected</h1><p>You can close this tab.</p></body></html>",
+        ));
     }
-    Html(
+    Html(localize_page(
         r#"<!DOCTYPE html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>anni · Sign in to INNA</title>
@@ -131,9 +130,27 @@ setInterval(async()=>{
   if(j.authenticated){document.body.innerHTML='<h1 style=color:#197a57>Connected</h1><p>You can close this tab.</p>';}}catch(e){}
 },1500);
 </script>
-</body></html>"#
-            .into(),
-    )
+</body></html>"#,
+    ))
+}
+
+/// The phone page is shown in the app language.
+fn localize_page(page: &str) -> String {
+    let mut page = page.to_string();
+    for (en, is) in [
+        ("anni · Sign in to INNA", "anni · Innskráning í INNU"),
+        ("Connect INNA on your phone", "Tengdu INNU í símanum"),
+        (
+            "Choose the button below and sign in. Keep this page open until Anni shows your planner.",
+            "Ýttu á hnappinn hér fyrir neðan og skráðu þig inn. Hafðu síðuna opna þar til Anni sýnir skipulagið þitt.",
+        ),
+        (">Open INNA<", ">Opna INNU<"),
+        (">Connected<", ">Tengt<"),
+        ("You can close this tab.", "Þú mátt loka þessum flipa."),
+    ] {
+        page = page.replace(en, crate::locale::t(en, is));
+    }
+    page
 }
 
 async fn status(State(state): State<ProxyState>) -> impl IntoResponse {

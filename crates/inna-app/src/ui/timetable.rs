@@ -1,5 +1,5 @@
 use crate::ui::theme::*;
-use crate::{locale, planner, state::AppState};
+use crate::{locale::{self, t}, planner, state::AppState};
 use chrono::{Datelike, Duration, NaiveDate, Timelike, Utc};
 use egui::{Color32, FontId, RichText, Sense, Stroke, Ui};
 use inna_core::models::TimetableEntry;
@@ -7,8 +7,8 @@ use inna_core::models::TimetableEntry;
 pub fn show(ui: &mut Ui, state: &mut AppState) {
     page_title(
         ui,
-        "Timetable",
-        "Your week, with a little more breathing room.",
+        t("Timetable", "Stundatafla"),
+        t("Your week, with a little more breathing room.", "Vikan þín, með aðeins meira andrými."),
     );
     let today = Utc::now().date_naive();
     let wide = ui.available_width() >= 900.0;
@@ -16,22 +16,22 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     let mut week = ui.ctx().data_mut(|d| *d.get_temp_mut_or(view_id, true));
     ui.horizontal_wrapped(|ui| {
         if ui
-            .button("‹ Previous")
-            .on_hover_text("Previous week")
+            .button(t("‹ Previous", "‹ Fyrri"))
+            .on_hover_text(t("Previous week", "Fyrri vika"))
             .clicked()
         {
             state.selected_date -= Duration::days(7);
         }
-        if ui.button("Next ›").on_hover_text("Next week").clicked() {
+        if ui.button(t("Next ›", "Næsta ›")).on_hover_text(t("Next week", "Næsta vika")).clicked() {
             state.selected_date += Duration::days(7);
         }
-        if ui.button("Today").clicked() {
+        if ui.button(t("Today", "Í dag")).clicked() {
             state.selected_date = today;
         }
         if wide {
             ui.separator();
-            ui.selectable_value(&mut week, true, "Week");
-            ui.selectable_value(&mut week, false, "Day");
+            ui.selectable_value(&mut week, true, t("Week", "Vika"));
+            ui.selectable_value(&mut week, false, t("Day", "Dagur"));
         }
     });
     ui.add_space(14.0);
@@ -39,9 +39,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         - Duration::days(state.selected_date.weekday().num_days_from_monday() as i64);
     let sunday = monday + Duration::days(6);
     let first = if monday.month() == sunday.month() {
-        monday.day().to_string()
+        tr!("{}", "{}.", monday.day())
     } else if monday.year() == sunday.year() {
-        format!("{} {}", monday.day(), locale::month(monday))
+        locale::day_month(monday)
     } else {
         locale::date(monday)
     };
@@ -61,8 +61,9 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         {
             if date >= monday && date <= sunday {
                 ui.label(
-                    RichText::new(format!(
+                    RichText::new(tr!(
                         "{} · {} · School calendar",
+                        "{} · {} · Skóladagatal",
                         locale::short_date(date),
                         event.course_code()
                     ))
@@ -91,9 +92,9 @@ pub fn teacher_absence_notices(ui: &mut Ui, state: &AppState, from: NaiveDate, t
     }
     card().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.label(RichText::new("Teacher absences · Forföll kennara").strong());
+        ui.label(RichText::new(t("Teacher absences · Forföll kennara", "Forföll kennara")).strong());
         for (entry, date) in cancelled {
-            ui.label(format!("{} · {} · {} · Cancelled — teacher absent",
+            ui.label(tr!("{} · {} · {} · Cancelled — teacher absent", "{} · {} · {} · Fellur niður — forföll kennara",
                 locale::short_date(date), entry.course_code(), entry.time_range()));
         }
     });
@@ -131,11 +132,11 @@ fn day_button(ui: &mut Ui, state: &mut AppState, date: NaiveDate, width: f32, he
     if selected {
         p.rect_stroke(rect, 2.0, Stroke::new(1.0, ACCENT));
     }
-    let weekday = &locale::weekday(date)[..3];
+    let weekday = locale::short_weekday(date);
     p.text(
         rect.center_top() + egui::vec2(0.0, 16.0),
         egui::Align2::CENTER_CENTER,
-        format!("{weekday} {}", date.day()),
+        tr!("{weekday} {}", "{weekday} {}.", date.day()),
         FontId::proportional(14.0),
         if today || selected {
             ACCENT
@@ -148,9 +149,9 @@ fn day_button(ui: &mut Ui, state: &mut AppState, date: NaiveDate, width: f32, he
         rect.center_top() + egui::vec2(0.0, 40.0),
         egui::Align2::CENTER_CENTER,
         if count == 0 {
-            "Free day".into()
+            t("Free day", "Frídagur").into()
         } else {
-            locale::counted(count, "class", "classes")
+            locale::counted(count, ("class", "classes"), ("tími", "tímar"))
         },
         FontId::proportional(11.0),
         TEXT_DIM,
@@ -271,9 +272,9 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
         ui.add_space(12.0);
         card().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label("No lessons are listed for this week.");
+            ui.label(t("No lessons are listed for this week.", "Engir tímar eru skráðir þessa viku."));
             ui.label(
-                RichText::new("Try another week or refresh your timetable.").color(TEXT_SECONDARY),
+                RichText::new(t("Try another week or refresh your timetable.", "Prófaðu aðra viku eða uppfærðu stundatöfluna.")).color(TEXT_SECONDARY),
             );
         });
         return;
@@ -340,7 +341,7 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
             p.text(
                 egui::pos2(x + width / 2.0, top + 28.0),
                 egui::Align2::CENTER_CENTER,
-                "No lessons",
+                t("No lessons", "Engir tímar"),
                 FontId::proportional(12.0),
                 TEXT_DIM,
             );
@@ -414,7 +415,7 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
                 text.text(
                     egui::pos2(left, r.bottom() - 8.0),
                     egui::Align2::LEFT_BOTTOM,
-                    format!("Room {}", entry.room()),
+                    tr!("Room {}", "Stofa {}", entry.room()),
                     FontId::proportional(11.0),
                     TEXT_SECONDARY,
                 );
@@ -432,17 +433,18 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
                     ui.id().with(("lesson", day, lesson.start, lesson.lane)),
                     Sense::click(),
                 )
-                .on_hover_text(format!(
+                .on_hover_text(tr!(
                     "{} · {}\n{}\nRoom {} · {}{}\nClick to open this day",
+                    "{} · {}\n{}\nStofa {} · {}{}\nSmelltu til að opna þennan dag",
                     super::assignments::subject(entry.course_code()),
                     entry.course_code(),
                     entry.time_range(),
                     entry.room(),
                     entry.teacher_str(),
                     if current {
-                        " · In class now"
+                        t(" · In class now", " · Í tíma núna")
                     } else if next {
-                        " · Next class"
+                        t(" · Next class", " · Næsti tími")
                     } else {
                         ""
                     }
@@ -472,14 +474,15 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
         .count();
     ui.add_space(8.0);
     ui.label(
-        RichText::new("Click a class for the day's details. Hover for teacher and room.")
+        RichText::new(t("Click a class for the day's details. Hover for teacher and room.", "Smelltu á tíma til að sjá daginn. Haltu músinni yfir til að sjá kennara og stofu."))
             .size(12.0)
             .color(TEXT_DIM),
     );
     if untimed > 0 {
         ui.label(
-            RichText::new(format!(
-                "{untimed} lessons have no usable time. Open Day to see them."
+            RichText::new(tr!(
+                "{untimed} lessons have no usable time. Open Day to see them.",
+                "{untimed} tímar hafa engan nothæfan tíma. Opnaðu Dag til að sjá þá."
             ))
             .size(12.0)
             .color(WARNING),
@@ -493,7 +496,7 @@ fn week_grid(ui: &mut Ui, state: &mut AppState, monday: NaiveDate, week: &mut bo
 
 fn day_schedule(ui: &mut Ui, state: &mut AppState) {
     ui.label(
-        RichText::new(locale::day(state.selected_date))
+        RichText::new(locale::capitalize(&locale::day(state.selected_date)))
             .size(21.0)
             .family(crate::ui::theme::semibold()),
     );
@@ -504,9 +507,10 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
         .map(|(s, e)| e - s)
         .sum();
     ui.label(
-        RichText::new(format!(
+        RichText::new(tr!(
             "{} · {}h {}m of lessons",
-            locale::counted(lessons.len(), "class", "classes"),
+            "{} · {} klst. {} mín. af kennslu",
+            locale::counted(lessons.len(), ("class", "classes"), ("tími", "tímar")),
             total / 60,
             total % 60
         ))
@@ -526,14 +530,14 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
         card().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(
-                RichText::new("A little room in your day.")
+                RichText::new(t("A little room in your day.", "Smá svigrúm í deginum."))
                     .size(20.0)
                     .family(crate::ui::theme::semibold()),
             );
-            ui.label(RichText::new("No lessons are listed for this date.").color(TEXT_SECONDARY));
+            ui.label(RichText::new(t("No lessons are listed for this date.", "Engir tímar eru skráðir þennan dag.")).color(TEXT_SECONDARY));
             if let Some(date) = next_date {
                 if ui
-                    .button(format!("Next school day · {}", locale::short_date(date)))
+                    .button(tr!("Next school day · {}", "Næsti skóladagur · {}", locale::short_date(date)))
                     .clicked()
                 {
                     state.selected_date = date;
@@ -552,7 +556,7 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
                 ui.horizontal(|ui| {
                     ui.add_space(108.0);
                     ui.label(
-                        RichText::new(format!("{} min break", start - end))
+                        RichText::new(tr!("{} min break", "{} mín. hlé", start - end))
                             .size(12.0)
                             .color(TEXT_DIM),
                     );
@@ -599,15 +603,15 @@ fn day_schedule(ui: &mut Ui, state: &mut AppState) {
                                     .family(crate::ui::theme::semibold()),
                             );
                             if current {
-                                badge(ui, "In class now", ACCENT);
+                                badge(ui, t("In class now", "Í tíma núna"), ACCENT);
                             } else if is_next {
-                                badge(ui, "Up next", WARNING);
+                                badge(ui, t("Up next", "Næst"), WARNING);
                             }
                         });
                         ui.label(RichText::new(entry.course_code()).size(12.0).color(color));
                         ui.horizontal_wrapped(|ui| {
                             if !entry.room().is_empty() {
-                                badge(ui, &format!("Room {}", entry.room()), color);
+                                badge(ui, &tr!("Room {}", "Stofa {}", entry.room()), color);
                             }
                             if !entry.teacher_str().is_empty() {
                                 ui.label(

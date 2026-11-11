@@ -16,7 +16,7 @@ pub fn wordmark(ui: &mut Ui, compact: bool) -> egui::Response {
     })
     .response
     .interact(Sense::click())
-    .on_hover_text("Open Today")
+    .on_hover_text(crate::locale::t("Open Today", "Opna yfirlit"))
     .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 

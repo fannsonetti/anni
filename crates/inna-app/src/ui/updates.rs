@@ -1,4 +1,5 @@
 //! A compact launcher window with real download progress and an animated scan bar.
+use crate::locale::t;
 use crate::{
     ui::{brand, theme::*},
     updates::Progress,
@@ -30,9 +31,9 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
                     });
                     ui.label(
                         RichText::new(if preview {
-                            "UPDATE PREVIEW"
+                            t("UPDATE PREVIEW", "SÝNISHORN UPPFÆRSLU")
                         } else {
-                            "AUTOMATIC UPDATES"
+                            t("AUTOMATIC UPDATES", "SJÁLFVIRKAR UPPFÆRSLUR")
                         })
                         .size(10.0)
                         .color(TEXT_DIM),
@@ -42,18 +43,18 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
             ui.add_space(22.0);
             let (title, description, fraction, status) = match progress {
                 Progress::Checking => (
-                    "Checking for updates",
-                    "Getting the latest version of Anni.".into(),
+                    t("Checking for updates", "Leita að uppfærslum"),
+                    t("Getting the latest version of Anni.", "Sæki nýjustu útgáfu Anni.").into(),
                     None,
-                    "Connecting to release service".into(),
+                    t("Connecting to release service", "Tengist útgáfuþjónustu").into(),
                 ),
                 Progress::Downloading {
                     version,
                     received,
                     total,
                 } => (
-                    "A fresh Anni is on its way",
-                    format!("Downloading version {version}."),
+                    t("A fresh Anni is on its way", "Nýtt Anni er á leiðinni"),
+                    tr!("Downloading version {version}.", "Sæki útgáfu {version}."),
                     Some((*received as f32 / (*total).max(1) as f32).clamp(0.0, 1.0)),
                     format!(
                         "{:.1} / {:.1} MB",
@@ -62,47 +63,56 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
                     ),
                 ),
                 Progress::Verifying { version } => (
-                    "Checking the download",
-                    format!("Verifying Anni {version} before installation."),
+                    t("Checking the download", "Athuga niðurhalið"),
+                    tr!("Verifying Anni {version} before installation.", "Staðfesti Anni {version} fyrir uppsetningu."),
                     None,
-                    "Verifying SHA-256 checksum".into(),
+                    t("Verifying SHA-256 checksum", "Staðfesti SHA-256 gátsummu").into(),
                 ),
                 Progress::Staged(update) => (
-                    "Your update is ready",
-                    format!("Preparing to install Anni {}.", update.version),
+                    t("Your update is ready", "Uppfærslan er tilbúin"),
+                    tr!("Preparing to install Anni {}.", "Undirbý uppsetningu á Anni {}.", update.version),
                     Some(1.0),
-                    "Download verified".into(),
+                    t("Download verified", "Niðurhal staðfest").into(),
                 ),
                 Progress::Installing { version } => (
-                    "Making things a little better",
-                    format!("Installing Anni {version}. It will open automatically."),
+                    t("Making things a little better", "Gerir hlutina aðeins betri"),
+                    tr!("Installing Anni {version}. It will open automatically.", "Set upp Anni {version}. Það opnast sjálfkrafa."),
                     None,
-                    "Installing update".into(),
+                    t("Installing update", "Set upp uppfærslu").into(),
                 ),
                 Progress::Current => (
-                    "You're up to date",
-                    "Everything is ready. Opening Anni…".into(),
+                    t("You're up to date", "Þú ert með nýjustu útgáfu"),
+                    t("Everything is ready. Opening Anni…", "Allt er tilbúið. Opna Anni…").into(),
                     Some(1.0),
-                    "Latest version installed".into(),
+                    t("Latest version installed", "Nýjasta útgáfan er uppsett").into(),
                 ),
                 Progress::Complete => (
-                    "Ready to go",
-                    "The update is installed. Welcome back.".into(),
+                    t("Ready to go", "Allt klárt"),
+                    t("The update is installed. Welcome back.", "Uppfærslan er uppsett. Gaman að sjá þig aftur.").into(),
                     Some(1.0),
-                    "Opening Anni".into(),
+                    t("Opening Anni", "Opna Anni").into(),
                 ),
                 Progress::Failed(reason) => (
                     if applying {
-                        "The update couldn't finish"
+                        t("The update couldn't finish", "Ekki tókst að ljúka uppfærslunni")
                     } else {
-                        "Starting your current version"
+                        t("Starting your current version", "Ræsi núverandi útgáfu")
                     },
-                    reason.clone(),
+                    // The detailed reasons are written in English; Icelandic gets a plain summary.
+                    if crate::locale::icelandic() {
+                        if applying {
+                            "Uppfærslan kláraðist ekki. Uppsetta útgáfan þín er óbreytt.".into()
+                        } else {
+                            "Ekki tókst að sækja uppfærsluna núna. Uppsetta útgáfan þín er óbreytt.".into()
+                        }
+                    } else {
+                        reason.clone()
+                    },
                     Some(0.0),
                     if applying {
-                        "You can retry next time Anni starts"
+                        t("You can retry next time Anni starts", "Þú getur reynt aftur næst þegar Anni ræsist")
                     } else {
-                        "We'll check again next time"
+                        t("We'll check again next time", "Við athugum aftur næst")
                     }
                     .into(),
                 ),
@@ -175,9 +185,9 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
                                 egui::Button::new(
                                     RichText::new(
                                         if applying || matches!(progress, Progress::Failed(_)) {
-                                            "Launch Anni"
+                                            t("Launch Anni", "Ræsa Anni")
                                         } else {
-                                            "Skip for now"
+                                            t("Skip for now", "Sleppa í bili")
                                         },
                                     )
                                     .size(12.0),
@@ -191,7 +201,7 @@ pub fn show(ctx: &egui::Context, progress: &Progress, elapsed: Duration, applyin
                         ui.painter().text(
                             rect.right_center(),
                             Align2::RIGHT_CENTER,
-                            "Anni will open automatically",
+                            t("Anni will open automatically", "Anni opnast sjálfkrafa"),
                             FontId::proportional(11.0),
                             TEXT_DIM,
                         );

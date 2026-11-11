@@ -15,7 +15,10 @@ mod tests {
     #[test]
     fn redesigned_pages_keep_long_content_inside_the_window() {
         use crate::state::{AppState, Page};
-        for page in [Page::Timetable, Page::Assignments, Page::Planner] {
+        for (language, page) in crate::locale::Language::ALL.into_iter().flat_map(|l| {
+            [Page::Timetable, Page::Assignments, Page::Planner].map(|p| (l, p))
+        }) {
+            crate::locale::set_language(language);
             for width in [700.0, 764.0, 1004.0, 1440.0] {
                 let ctx = egui::Context::default();
                 super::theme::apply_theme(&ctx);

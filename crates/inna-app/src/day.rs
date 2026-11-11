@@ -84,9 +84,9 @@ fn break_name(from: NaiveDateTime, to: NaiveDateTime) -> &'static str {
         && (from.hour(), from.minute()) < (13, 30)
         && (to.hour(), to.minute()) > (11, 30);
     if lunch {
-        "Lunch break"
+        locale::t("Lunch break", "Hádegishlé")
     } else {
-        "Break"
+        locale::t("Break", "Frímínútur")
     }
 }
 
@@ -105,17 +105,17 @@ fn clock(time: NaiveDateTime) -> String {
 fn duration(span: Duration) -> String {
     let minutes = (span.num_seconds().max(0) + 59) / 60;
     match (minutes / 60, minutes % 60) {
-        (0, minutes) => format!("{minutes} min"),
-        (hours, 0) => format!("{hours} h"),
-        (hours, minutes) => format!("{hours} h {minutes} min"),
+        (0, minutes) => tr!("{minutes} min", "{minutes} mín."),
+        (hours, 0) => tr!("{hours} h", "{hours} klst."),
+        (hours, minutes) => tr!("{hours} h {minutes} min", "{hours} klst. {minutes} mín."),
     }
 }
 
 fn next_day_text(first: &Segment, now: NaiveDateTime) -> String {
     let day = if (first.start.date() - now.date()).num_days() == 1 {
-        "tomorrow".to_string()
+        locale::t("tomorrow", "á morgun").to_string()
     } else {
-        first.start.format("%A").to_string()
+        locale::weekday(first.start.date()).to_string()
     };
     format!("{day} {} {}", first.subject, clock(first.start))
 }
@@ -145,7 +145,7 @@ impl DayState {
             return Self {
                 phase: Phase::NoSchool,
                 segments,
-                headline: std::iter::once("No school today".to_string())
+                headline: std::iter::once(locale::t("No school today", "Enginn skóli í dag").to_string())
                     .chain(next_day)
                     .collect(),
                 footer: String::new(),
@@ -168,29 +168,29 @@ impl DayState {
         let elapsed = (now - first_start).num_seconds() as f64;
         let total = (last_end - first_start).num_seconds() as f64;
         let percent = (elapsed / total * 100.0).clamp(0.0, 100.0).floor();
-        let progress = format!("Day {percent}% done · school ends {}", clock(last_end));
+        let progress = tr!("Day {percent}% done · school ends {}", "Dagurinn {percent}% búinn · skóla lýkur {}", clock(last_end));
         let next_text =
-            |lesson: &Segment| format!("next {} {}", lesson.subject, clock(lesson.start));
+            |lesson: &Segment| tr!("next {} {}", "næst {} {}", lesson.subject, clock(lesson.start));
 
         if now < first_start {
             return Self {
                 phase: Phase::Before,
                 segments,
                 headline: vec![
-                    format!("First class: {first_subject} at {}", clock(first_start)),
-                    format!("in {}", duration(first_start - now)),
+                    tr!("First class: {first_subject} at {}", "Fyrsti tími: {first_subject} kl. {}", clock(first_start)),
+                    tr!("in {}", "eftir {}", duration(first_start - now)),
                 ],
-                footer: format!("School ends {}", clock(last_end)),
+                footer: tr!("School ends {}", "Skóla lýkur {}", clock(last_end)),
             };
         }
         if now >= last_end {
             return Self {
                 phase: Phase::After,
                 segments,
-                headline: std::iter::once("School's out".to_string())
+                headline: std::iter::once(locale::t("School's out", "Skóladeginum er lokið").to_string())
                     .chain(next_day)
                     .collect(),
-                footer: format!("School ended {}", clock(last_end)),
+                footer: tr!("School ended {}", "Skóla lauk {}", clock(last_end)),
             };
         }
         if let Some(current) = current {
@@ -198,9 +198,9 @@ impl DayState {
                 phase: Phase::InClass,
                 headline: vec![
                     current.subject.clone(),
-                    format!("{} left", duration(current.end - now)),
+                    tr!("{} left", "{} eftir", duration(current.end - now)),
                     next.as_ref()
-                        .map_or_else(|| "last class".to_string(), next_text),
+                        .map_or_else(|| locale::t("last class", "síðasti tími").to_string(), next_text),
                 ],
                 segments,
                 footer: progress,
@@ -220,7 +220,7 @@ impl DayState {
             segments,
             headline: vec![
                 name,
-                format!("{} left", duration(next.start - now)),
+                tr!("{} left", "{} eftir", duration(next.start - now)),
                 next_text(&next),
             ],
             footer: progress,
@@ -237,10 +237,10 @@ pub fn countdown(deadline: planner::Deadline, now: NaiveDateTime) -> String {
         String::new()
     };
     match days {
-        _ if deadline.at < now => "overdue".into(),
-        0 => format!("today{time}"),
-        1 => format!("tomorrow{time}"),
-        days => locale::counted(days as usize, "day", "days"),
+        _ if deadline.at < now => locale::t("overdue", "seint").into(),
+        0 => tr!("today{time}", "í dag{time}"),
+        1 => tr!("tomorrow{time}", "á morgun{time}"),
+        days => locale::counted(days as usize, ("day", "days"), ("dagur", "dagar")),
     }
 }
 

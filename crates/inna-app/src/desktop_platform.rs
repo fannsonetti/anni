@@ -368,7 +368,7 @@ mod windows {
                 return Ok(false);
             }
             if status != ERROR_SUCCESS {
-                return Err("Could not read Windows startup settings.".into());
+                return Err(crate::locale::t("Could not read Windows startup settings.", "Ekki tókst að lesa ræsistillingar Windows.").into());
             }
             let status = RegQueryValueExW(
                 key,
@@ -382,7 +382,7 @@ mod windows {
             match status {
                 ERROR_SUCCESS => Ok(true),
                 ERROR_FILE_NOT_FOUND => Ok(false),
-                _ => Err("Could not read Windows startup settings.".into()),
+                _ => Err(crate::locale::t("Could not read Windows startup settings.", "Ekki tókst að lesa ræsistillingar Windows.").into()),
             }
         }
     }
@@ -402,14 +402,14 @@ mod windows {
                 null_mut(),
             );
             if status != ERROR_SUCCESS {
-                return Err("Could not change Windows startup settings.".into());
+                return Err(crate::locale::t("Could not change Windows startup settings.", "Ekki tókst að breyta ræsistillingum Windows.").into());
             }
             let status = if enabled {
                 let exe = match std::env::current_exe() {
                     Ok(exe) => exe,
                     Err(_) => {
                         RegCloseKey(key);
-                        return Err("Could not find Anni's executable.".into());
+                        return Err(crate::locale::t("Could not find Anni's executable.", "Fann ekki keyrsluskrá Anni.").into());
                     }
                 };
                 let command = wide(&format!("\"{}\" --desktop", exe.display()));
@@ -428,7 +428,7 @@ mod windows {
             if status == ERROR_SUCCESS || (!enabled && status == ERROR_FILE_NOT_FOUND) {
                 Ok(())
             } else {
-                Err("Could not change Windows startup settings. Please try again.".into())
+                Err(crate::locale::t("Could not change Windows startup settings. Please try again.", "Ekki tókst að breyta ræsistillingum Windows. Reyndu aftur.").into())
             }
         }
     }
@@ -490,5 +490,5 @@ pub fn startup_enabled() -> Result<bool, String> {
 }
 #[cfg(not(windows))]
 pub fn set_startup(_: bool) -> Result<(), String> {
-    Err("Automatic startup is supported on Windows. See the README for Linux setup.".into())
+    Err(crate::locale::t("Automatic startup is supported on Windows. See the README for Linux setup.", "Sjálfvirk ræsing er studd í Windows. Sjá README fyrir uppsetningu í Linux.").into())
 }

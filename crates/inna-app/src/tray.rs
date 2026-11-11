@@ -20,8 +20,8 @@ pub fn create() -> Option<Tray> {
             return None;
         }
     };
-    let open = MenuItem::new("Open Anni", true, None);
-    let quit = MenuItem::new("Quit Anni", true, None);
+    let open = MenuItem::new(crate::locale::t("Open Anni", "Opna Anni"), true, None);
+    let quit = MenuItem::new(crate::locale::t("Quit Anni", "Loka Anni"), true, None);
     let menu = Menu::new();
     if let Err(error) = menu.append_items(&[&open, &PredefinedMenuItem::separator(), &quit]) {
         tracing::warn!("Could not build the tray menu: {error}");

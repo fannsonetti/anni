@@ -1,5 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+#[macro_use]
+mod locale;
 mod app;
 mod class_names;
 mod day;
@@ -7,7 +9,6 @@ mod desktop;
 mod desktop_platform;
 mod diagnostics;
 mod grades;
-mod locale;
 mod mock;
 mod persistence;
 mod phone_auth;
@@ -66,6 +67,13 @@ fn main() {
         .init();
 
     tracing::info!("starting anni");
+
+    // The update screen, tray menu, and planner all use the saved app language.
+    if !cli.mock {
+        if let Ok(settings) = settings::DesktopSettings::load() {
+            locale::set_language(settings.language);
+        }
+    }
 
     if let Some(path) = &cli.apply_update {
         if let Err(error) = updates::run_apply(path) {

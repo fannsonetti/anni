@@ -435,7 +435,7 @@ fn work_row(
         course.clone_from(&item.course);
     }
     if item.kind == WorkKind::Exam {
-        course = [course.as_str(), "exam"]
+        course = [course.as_str(), crate::locale::t("exam", "próf")]
             .into_iter()
             .filter(|part| !part.is_empty())
             .collect::<Vec<_>>()
@@ -623,8 +623,8 @@ fn work_content(
                         pos2(edge(rect) + inward * dot_space, rect.top()),
                         anchor,
                         match tab {
-                            WorkTab::Assignments => "Nothing due",
-                            WorkTab::Homework => "No homework",
+                            WorkTab::Assignments => crate::locale::t("Nothing due", "Ekkert á að skila"),
+                            WorkTab::Homework => crate::locale::t("No homework", "Engin heimavinna"),
                         },
                         FontId::proportional(ITEM * scale),
                         palette.text.gamma_multiply(0.7),
@@ -919,16 +919,16 @@ fn schedule_content(
                 .collect();
 
             let heading = if date == now.date() {
-                "Today"
+                crate::locale::t("Today", "Í dag")
             } else {
-                "Next school day"
+                crate::locale::t("Next school day", "Næsti skóladagur")
             };
             let header_height = (SMALL * 2.8 + 12.0) * scale;
             let updated = state
                 .last_sync
                 .get("timetable")
                 .and_then(|time| chrono::DateTime::parse_from_rfc3339(time).ok())
-                .map(|time| format!("Updated {}", time.format("%H:%M")));
+                .map(|time| tr!("Updated {}", "Uppfært {}", time.format("%H:%M")));
             let empty_height = if lines.is_empty() {
                 ITEM * scale * 1.4
             } else {
@@ -964,7 +964,7 @@ fn schedule_content(
                     ui.painter(),
                     rect.min + vec2(0.0, SMALL * 1.4 * scale),
                     Align2::LEFT_TOP,
-                    locale::day(date),
+                    locale::capitalize(&locale::day(date)),
                     FontId::proportional(SMALL * scale),
                     palette.text.gamma_multiply(0.75),
                 );
@@ -977,7 +977,7 @@ fn schedule_content(
                         ui.painter(),
                         rect.min,
                         Align2::LEFT_TOP,
-                        "No upcoming classes",
+                        crate::locale::t("No upcoming classes", "Engir tímar fram undan"),
                         FontId::proportional(ITEM * scale),
                         palette.text.gamma_multiply(0.75),
                     );
@@ -1144,7 +1144,7 @@ pub fn planner_progress(ui: &mut egui::Ui, state: &AppState) {
     let now = Utc::now().naive_utc();
     let day = DayState::compute(&state.timetable, now);
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 66.0), Sense::hover());
-    response.on_hover_text("Based on your saved INNA timetable, using Icelandic time. Day progress runs from the first class start to the last class end, including breaks. Each segment is a class; thinner segments show breaks of 15 minutes or more. The countdown shows time left in this class or until the next one. Before school it counts down to the first class; afterward it shows School's out. Days without classes preview the next saved school day.");
+    response.on_hover_text(crate::locale::t("Based on your saved INNA timetable, using Icelandic time. Day progress runs from the first class start to the last class end, including breaks. Each segment is a class; thinner segments show breaks of 15 minutes or more. The countdown shows time left in this class or until the next one. Before school it counts down to the first class; afterward it shows School's out. Days without classes preview the next saved school day.", "Byggt á vistuðu stundatöflunni úr INNU, á íslenskum tíma. Framvinda dagsins nær frá upphafi fyrsta tíma til loka þess síðasta, að meðtöldum hléum. Hver hluti er tími; mjórri hlutar sýna hlé sem eru 15 mínútur eða lengri. Niðurtalningin sýnir hvað er eftir af tímanum eða þar til sá næsti byrjar. Fyrir skóla telur hún niður að fyrsta tíma; eftir skóla sýnir hún að skóladeginum sé lokið. Dagar án tíma sýna næsta vistaða skóladag."));
     paint_progress(
         ui.painter(),
         rect,
@@ -1285,7 +1285,7 @@ fn paint_clock(p: &Painter, rect: Rect, now: chrono::DateTime<Utc>, settings: &D
                     } * scale,
                 ),
             Align2::CENTER_CENTER,
-            locale::day(now.date_naive()),
+            locale::capitalize(&locale::day(now.date_naive())),
             FontId::proportional(13.0 * scale),
             palette.text.gamma_multiply(0.85),
         );

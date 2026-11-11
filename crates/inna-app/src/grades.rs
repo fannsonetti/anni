@@ -9,7 +9,7 @@ pub const COURSES_URL: &str = "https://www.flensborg.is/is/namid/nam-og-namshaet
 
 pub fn average_text(value: f64) -> String {
     if value < PASS_MARK && (value * 100.0).round() / 100.0 >= PASS_MARK {
-        "< 4.50".into()
+        format!("< {}", crate::locale::decimal(PASS_MARK, 2))
     } else {
         crate::locale::decimal(value, 2)
     }
@@ -53,9 +53,9 @@ pub enum Standing {
 impl Standing {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Above => "Above the general pass mark",
-            Self::Below => "Below the general pass mark",
-            Self::Unknown => "Not enough information",
+            Self::Above => crate::locale::t("Above the general pass mark", "Yfir almennri lágmarkseinkunn"),
+            Self::Below => crate::locale::t("Below the general pass mark", "Undir almennri lágmarkseinkunn"),
+            Self::Unknown => crate::locale::t("Not enough information", "Ekki nægar upplýsingar"),
         }
     }
 }
@@ -127,14 +127,15 @@ impl GradeSummary {
     }
 
     pub fn explanation(&self) -> Option<&'static str> {
+        use crate::locale::t;
         if self.invalid_total {
-            Some("Listed weights exceed 100%. The assessment structure needs checking before an average can be calculated.")
+            Some(t("Listed weights exceed 100%. The assessment structure needs checking before an average can be calculated.", "Skráð vægi er yfir 100%. Það þarf að athuga námsmatið áður en hægt er að reikna meðaltal."))
         } else if self.missing_weights > 0 {
-            Some("Some grades have no weight. This average uses only known weights, so the result is uncertain.")
+            Some(t("Some grades have no weight. This average uses only known weights, so the result is uncertain.", "Sumar einkunnir hafa ekkert vægi. Meðaltalið notar aðeins þekkt vægi svo niðurstaðan er óviss."))
         } else if self.non_numeric_weighted > 0 {
-            Some("Some weighted grades are nonnumeric. This average includes only numeric grades, so the result is uncertain.")
+            Some(t("Some weighted grades are nonnumeric. This average includes only numeric grades, so the result is uncertain.", "Sumar vegnar einkunnir eru ekki tölulegar. Meðaltalið tekur aðeins tölulegar einkunnir með svo niðurstaðan er óviss."))
         } else if self.average.is_none() {
-            Some("No numeric grades with positive weight are available yet. Grades with zero weight are excluded.")
+            Some(t("No numeric grades with positive weight are available yet. Grades with zero weight are excluded.", "Engar tölulegar einkunnir með jákvætt vægi eru komnar enn. Einkunnir með ekkert vægi eru undanskildar."))
         } else {
             None
         }
@@ -151,15 +152,15 @@ pub enum GradeView {
 impl GradeView {
     pub fn label(self) -> &'static str {
         match self {
-            Self::GradedWork => "Graded work",
-            Self::FullCourse => "Full coursework",
+            Self::GradedWork => crate::locale::t("Graded work", "Metin vinna"),
+            Self::FullCourse => crate::locale::t("Full coursework", "Allur áfanginn"),
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::GradedWork => "Weighted average of numeric grades received so far. Ungraded work is excluded.",
-            Self::FullCourse => "Points earned toward the full course out of 10. Ungraded work has earned no points yet; this is not a predicted final grade.",
+            Self::GradedWork => crate::locale::t("Weighted average of numeric grades received so far. Ungraded work is excluded.", "Vegið meðaltal tölulegra einkunna sem komnar eru. Ómetin vinna er undanskilin."),
+            Self::FullCourse => crate::locale::t("Points earned toward the full course out of 10. Ungraded work has earned no points yet; this is not a predicted final grade.", "Stig áunnin upp í allan áfangann af 10. Ómetin vinna hefur engin stig gefið enn; þetta er ekki spá um lokaeinkunn."),
         }
     }
 

@@ -32,8 +32,8 @@ impl WorkTab {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Assignments => "Assignments",
-            Self::Homework => "Homework",
+            Self::Assignments => crate::locale::t("Assignments", "Verkefni"),
+            Self::Homework => crate::locale::t("Homework", "Heimavinna"),
         }
     }
 }
@@ -80,32 +80,33 @@ impl DesktopTheme {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Navy => "Navy",
-            Self::Forest => "Forest",
-            Self::Ocean => "Ocean",
-            Self::Plum => "Plum",
-            Self::Ember => "Ember",
-            Self::Graphite => "Graphite",
-            Self::HighContrast => "High contrast",
+            Self::Navy => crate::locale::t("Navy", "Dimmblár"),
+            Self::Forest => crate::locale::t("Forest", "Skógur"),
+            Self::Ocean => crate::locale::t("Ocean", "Haf"),
+            Self::Plum => crate::locale::t("Plum", "Plóma"),
+            Self::Ember => crate::locale::t("Ember", "Glóð"),
+            Self::Graphite => crate::locale::t("Graphite", "Grafít"),
+            Self::HighContrast => crate::locale::t("High contrast", "Mikil skerpa"),
         }
     }
 
     pub fn short_label(self) -> &'static str {
         match self {
-            Self::HighContrast => "Contrast",
+            Self::HighContrast => crate::locale::t("Contrast", "Skerpa"),
             _ => self.label(),
         }
     }
 
     pub fn description(self) -> &'static str {
+        use crate::locale::t;
         match self {
-            Self::Navy => "Sky blue accents on deep navy.",
-            Self::Forest => "Fresh green accents with warm deadline colors.",
-            Self::Ocean => "Bright teal accents on deep sea blue.",
-            Self::Plum => "Soft violet accents with pink deadlines.",
-            Self::Ember => "Warm orange accents on dark brown.",
-            Self::Graphite => "Muted gold accents on neutral charcoal.",
-            Self::HighContrast => "Bright white and yellow on dark panels for easier reading.",
+            Self::Navy => t("Sky blue accents on deep navy.", "Himinbláar áherslur á djúpum dimmbláum grunni."),
+            Self::Forest => t("Fresh green accents with warm deadline colors.", "Ferskar grænar áherslur með hlýjum skilafrestslitum."),
+            Self::Ocean => t("Bright teal accents on deep sea blue.", "Bjartar blágrænar áherslur á djúpbláum grunni."),
+            Self::Plum => t("Soft violet accents with pink deadlines.", "Mildar fjólubláar áherslur með bleikum skilafrestum."),
+            Self::Ember => t("Warm orange accents on dark brown.", "Hlýjar appelsínugular áherslur á dökkbrúnum grunni."),
+            Self::Graphite => t("Muted gold accents on neutral charcoal.", "Daufar gylltar áherslur á hlutlausum kolgráum grunni."),
+            Self::HighContrast => t("Bright white and yellow on dark panels for easier reading.", "Bjart hvítt og gult á dökkum flötum til að auðvelda lestur."),
         }
     }
 
@@ -185,6 +186,8 @@ pub struct DesktopSettings {
     pub include_exams: bool,
     pub include_reminders: bool,
     pub work_tab: WorkTab,
+    /// The language for the whole app; files saved before it existed read as English.
+    pub language: crate::locale::Language,
     /// Files saved before this field existed read as 0.
     #[serde(default)]
     pub layout_version: u8,
@@ -219,6 +222,7 @@ impl Default for DesktopSettings {
             include_exams: false,
             include_reminders: false,
             work_tab: WorkTab::Assignments,
+            language: crate::locale::Language::English,
             layout_version: LAYOUT_VERSION,
         }
     }
@@ -254,7 +258,7 @@ impl DesktopSettings {
         match std::fs::read(path) {
             Ok(bytes) => {
                 let mut settings: Self = serde_json::from_slice(&bytes)
-                    .map_err(|_| "Could not load desktop preferences.".to_string())?;
+                    .map_err(|_| crate::locale::t("Could not load desktop preferences.", "Ekki tókst að hlaða stillingum.").to_string())?;
                 // Replace the old themed clock without resetting layout or content choices.
                 let legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
                 if matches!(legacy["theme"].as_str(), Some("Arc" | "IronMan"))
@@ -282,7 +286,7 @@ impl DesktopSettings {
                 Ok(settings)
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(_) => Err("Could not load desktop preferences.".into()),
+            Err(_) => Err(crate::locale::t("Could not load desktop preferences.", "Ekki tókst að hlaða stillingum.").into()),
         }
     }
 
@@ -303,7 +307,7 @@ impl DesktopSettings {
         };
         save().map_err(|error| {
             tracing::warn!("Could not save desktop preferences: {error}");
-            "Could not save desktop preferences. Please try again.".into()
+            crate::locale::t("Could not save desktop preferences. Please try again.", "Ekki tókst að vista stillingar. Reyndu aftur.").into()
         })
     }
 }
@@ -384,6 +388,7 @@ mod tests {
             corner_radius: 20,
             show_course_codes: false,
             show_deadlines: false,
+            language: crate::locale::Language::Icelandic,
             ..Default::default()
         };
         settings.save_to(&path).unwrap();
@@ -399,6 +404,7 @@ mod tests {
         assert_eq!(restored.accent, DesktopAccent::Mint);
         assert_eq!(restored.clock_style, ClockStyle::Reactor);
         assert_eq!(restored.row_spacing, 24);
+        assert_eq!(restored.language, crate::locale::Language::English);
         assert_eq!(restored.corner_radius, 24);
         std::fs::write(&path, b"broken").unwrap();
         assert!(DesktopSettings::load_from(&path).is_err());

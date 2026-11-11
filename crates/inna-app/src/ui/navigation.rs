@@ -1,4 +1,5 @@
 use super::{brand, theme};
+use crate::locale::t;
 use crate::state::{AppState, Page};
 use egui::{RichText, Ui};
 
@@ -29,7 +30,7 @@ pub fn sidebar(ctx: &egui::Context, state: &mut AppState) {
                 .id_salt("sidebar_pages")
                 .max_height(menu_height)
                 .show(ui, |ui| {
-                    group(ui, state, "School", Page::SCHOOL_PAGES);
+                    group(ui, state, t("School", "Skóli"), Page::SCHOOL_PAGES);
                 });
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 if let Some(user) = &state.user {
@@ -79,7 +80,7 @@ pub fn location(ui: &mut Ui, state: &mut AppState) {
                 .frame(false)
                 .min_size(egui::vec2(28.0, 30.0)),
         )
-        .on_hover_text("Back · Alt + Left")
+        .on_hover_text(t("Back · Alt + Left", "Til baka · Alt + Vinstri"))
         .clicked()
     {
         state.go_back();
@@ -91,7 +92,7 @@ pub fn location(ui: &mut Ui, state: &mut AppState) {
                 .frame(false)
                 .min_size(egui::vec2(28.0, 30.0)),
         )
-        .on_hover_text("Forward · Alt + Right")
+        .on_hover_text(t("Forward · Alt + Right", "Áfram · Alt + Hægri"))
         .clicked()
     {
         state.go_forward();
@@ -104,7 +105,7 @@ pub fn location(ui: &mut Ui, state: &mut AppState) {
     );
     if state.selected_announcement.is_some() {
         ui.label(
-            RichText::new("/ Announcement")
+            RichText::new(t("/ Announcement", "/ Tilkynning"))
                 .size(12.0)
                 .color(theme::TEXT_DIM),
         );
@@ -153,14 +154,14 @@ pub fn compact_bar(ctx: &egui::Context, state: &mut AppState) {
                     egui::Layout::top_down_justified(egui::Align::Center),
                     |ui| {
                         ui.menu_button(
-                            RichText::new("More").size(14.0).color(if more_selected {
+                            RichText::new(t("More", "Meira")).size(14.0).color(if more_selected {
                                 theme::ACCENT
                             } else {
                                 theme::TEXT_SECONDARY
                             }),
                             |ui| {
                                 ui.set_min_width(250.0);
-                                ui.label(RichText::new("All pages").small().color(theme::TEXT_DIM));
+                                ui.label(RichText::new(t("All pages", "Allar síður")).small().color(theme::TEXT_DIM));
                                 egui::ScrollArea::vertical()
                                     .id_salt("compact_pages")
                                     .max_height((ctx.screen_rect().height() - 100.0).max(160.0))
@@ -223,12 +224,12 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
     );
     if description {
         let short = match page {
-            Page::Home => "What matters today",
-            Page::Planner => "Deadlines & tasks",
-            Page::Timetable => "Lessons & rooms",
-            Page::Assignments => "Progress & results",
-            Page::Announcements => "News from your school",
-            Page::Connection => "Connection & preferences",
+            Page::Home => t("What matters today", "Það sem skiptir máli í dag"),
+            Page::Planner => t("Deadlines & tasks", "Skilafrestir og verkefni"),
+            Page::Timetable => t("Lessons & rooms", "Tímar og stofur"),
+            Page::Assignments => t("Progress & results", "Framvinda og niðurstöður"),
+            Page::Announcements => t("News from your school", "Fréttir frá skólanum"),
+            Page::Connection => t("Language & preferences", "Tungumál og stillingar"),
         };
         ui.painter().text(
             egui::pos2(rect.left() + 12.0, rect.top() + 35.0),

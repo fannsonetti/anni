@@ -40,11 +40,12 @@ pub enum WorkKind {
 
 impl WorkKind {
     pub fn label(self) -> &'static str {
+        use crate::locale::t;
         match self {
-            Self::Assignment => "Assignment",
-            Self::Exam => "Exam",
-            Self::Homework => "Homework",
-            Self::InnaTask => "INNA task",
+            Self::Assignment => t("Assignment", "Verkefni"),
+            Self::Exam => t("Exam", "Próf"),
+            Self::Homework => t("Homework", "Heimavinna"),
+            Self::InnaTask => t("INNA task", "Verkefni í INNU"),
         }
     }
 }
@@ -131,20 +132,20 @@ impl WorkItem {
     pub fn due_label(&self, today: NaiveDate) -> String {
         let Some(deadline) = self.deadline else {
             return if self.due_text.is_empty() {
-                "No due date".into()
+                crate::locale::t("No due date", "Enginn skilafrestur").into()
             } else {
-                format!("Original deadline: {}", self.due_text)
+                tr!("Original deadline: {}", "Upprunalegur skilafrestur: {}", self.due_text)
             };
         };
         let days = (deadline.at.date() - today).num_days();
         let day = match days {
-            0 => "Today".into(),
-            1 => "Tomorrow".into(),
-            -1 => "Yesterday".into(),
+            0 => crate::locale::t("Today", "Í dag").into(),
+            1 => crate::locale::t("Tomorrow", "Á morgun").into(),
+            -1 => crate::locale::t("Yesterday", "Í gær").into(),
             _ => crate::locale::date(deadline.at.date()),
         };
         if deadline.has_time {
-            format!("{day} at {}", deadline.at.format("%H:%M"))
+            tr!("{day} at {}", "{day} kl. {}", deadline.at.format("%H:%M"))
         } else {
             day
         }
