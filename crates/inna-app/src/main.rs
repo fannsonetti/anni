@@ -3,6 +3,7 @@
 #[macro_use]
 mod locale;
 mod app;
+mod calculator;
 mod class_names;
 mod day;
 mod desktop;

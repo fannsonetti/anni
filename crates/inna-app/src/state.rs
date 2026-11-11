@@ -43,6 +43,7 @@ pub enum Page {
     Timetable,
     Announcements,
     Assignments,
+    Calculator,
     Planner,
     Connection,
 }
@@ -55,6 +56,7 @@ impl Page {
             Self::Timetable => t("Timetable", "Stundatafla"),
             Self::Announcements => t("Announcements", "Tilkynningar"),
             Self::Assignments => t("Courses & grades", "Áfangar og einkunnir"),
+            Self::Calculator => t("Grade calculator", "Einkunnareiknir"),
             Self::Planner => t("Schoolwork", "Skólavinna"),
             Self::Connection => t("Settings", "Stillingar"),
         }
@@ -67,6 +69,7 @@ impl Page {
             Self::Planner => t("Assignments, tests, homework, and submissions", "Verkefni, próf, heimavinna og skil"),
             Self::Timetable => t("Lessons, rooms, and teachers", "Kennslustundir, stofur og kennarar"),
             Self::Assignments => t("Grades and progress in each course", "Einkunnir og framvinda í hverjum áfanga"),
+            Self::Calculator => t("The grades you need for the final grade you want", "Einkunnirnar sem þú þarft fyrir lokaeinkunnina sem þú vilt"),
             Self::Announcements => t("News from your school", "Fréttir frá skólanum"),
             Self::Connection => t("Language, your INNA connection and saved data", "Tungumál, tengingin við INNU og vistuð gögn"),
         }
@@ -76,6 +79,7 @@ impl Page {
         Page::Home,
         Page::Timetable,
         Page::Assignments,
+        Page::Calculator,
         Page::Planner,
         Page::Announcements,
     ];
@@ -84,6 +88,7 @@ impl Page {
         Page::Home,
         Page::Timetable,
         Page::Assignments,
+        Page::Calculator,
         Page::Planner,
         Page::Announcements,
         Page::Connection,
@@ -103,6 +108,7 @@ pub struct AppState {
     pub announcements: Vec<Announcement>,
     pub assignments: Vec<AssignmentModule>,
     pub grade_view: crate::grades::GradeView,
+    pub calculator: crate::calculator::Calculator,
     pub homework: Vec<Homework>,
     pub todo_items: Vec<TodoItem>,
     pub selected_page: Page,
@@ -209,6 +215,7 @@ impl AppState {
             self.timetable.clear();
             self.announcements.clear();
             self.assignments.clear();
+            self.calculator = Default::default();
             self.homework.clear();
             self.todo_items.clear();
             self.last_sync.clear();
@@ -232,6 +239,7 @@ impl AppState {
             announcements: Vec::new(),
             assignments: Vec::new(),
             grade_view: Default::default(),
+            calculator: Default::default(),
             homework: Vec::new(),
             todo_items: Vec::new(),
             selected_page: Page::Home,

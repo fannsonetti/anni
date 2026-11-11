@@ -1,6 +1,7 @@
 pub mod announcements;
 pub mod assignments;
 pub mod brand;
+pub mod calculator;
 pub mod connection;
 pub mod desktop;
 pub mod home;
@@ -16,7 +17,7 @@ mod tests {
     fn redesigned_pages_keep_long_content_inside_the_window() {
         use crate::state::{AppState, Page};
         for (language, page) in crate::locale::Language::ALL.into_iter().flat_map(|l| {
-            [Page::Timetable, Page::Assignments, Page::Planner].map(|p| (l, p))
+            [Page::Timetable, Page::Assignments, Page::Calculator, Page::Planner].map(|p| (l, p))
         }) {
             crate::locale::set_language(language);
             for width in [700.0, 764.0, 1004.0, 1440.0] {
@@ -52,6 +53,9 @@ mod tests {
                                             super::assignments::show(ui, &mut state)
                                         }
                                         Page::Planner => super::planner::show(ui, &mut state),
+                                        Page::Calculator => {
+                                            super::calculator::show(ui, &mut state)
+                                        }
                                         _ => unreachable!(),
                                     }
                                     assert!(

@@ -618,6 +618,7 @@ impl AppData {
                     Page::Timetable=>ui::timetable::show(ui,&mut self.state),
                     Page::Announcements=>ui::announcements::show(ui,&mut self.state),
                     Page::Assignments=>ui::assignments::show(ui,&mut self.state),
+                    Page::Calculator=>ui::calculator::show(ui,&mut self.state),
                     Page::Planner=>ui::planner::show(ui,&mut self.state),
                     Page::Connection=>{
                         // Hermes' Settings is one narrow column of cards.

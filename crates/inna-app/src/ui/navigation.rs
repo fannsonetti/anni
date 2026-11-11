@@ -228,6 +228,7 @@ fn item(ui: &mut Ui, page: Page, selected: bool, description: bool) -> egui::Res
             Page::Planner => t("Deadlines & tasks", "Skilafrestir og verkefni"),
             Page::Timetable => t("Lessons & rooms", "Tímar og stofur"),
             Page::Assignments => t("Progress & results", "Framvinda og niðurstöður"),
+            Page::Calculator => t("Plan your final grade", "Reiknaðu lokaeinkunnina"),
             Page::Announcements => t("News from your school", "Fréttir frá skólanum"),
             Page::Connection => t("Language & preferences", "Tungumál og stillingar"),
         };

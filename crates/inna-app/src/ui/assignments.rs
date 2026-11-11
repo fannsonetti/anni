@@ -114,18 +114,27 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             ui.label(t("Connect INNA and refresh to see your course progress.", "Tengdu INNU og uppfærðu til að sjá framvinduna í áföngunum."));
         });
     }
+    let mut calculate = None;
     if ui.available_width() >= 780.0 {
         for pair in modules.chunks(2) {
             ui.columns(2, |cols| {
                 for (i, module) in pair.iter().enumerate() {
-                    course_card(&mut cols[i], module, view);
+                    if course_card(&mut cols[i], module, view) {
+                        calculate = Some(module.module_str().to_string());
+                    }
                 }
             });
         }
     } else {
         for module in &modules {
-            course_card(ui, module, view);
+            if course_card(ui, module, view) {
+                calculate = Some(module.module_str().to_string());
+            }
         }
+    }
+    if let Some(code) = calculate {
+        state.calculator.course = Some(code);
+        state.navigate(crate::state::Page::Calculator);
     }
     ui.add_space(16.0);
     card().fill(NEXT_HIGHLIGHT).show(ui, |ui| {
@@ -155,7 +164,8 @@ pub fn grade_view_picker(ui: &mut Ui, view: &mut GradeView) {
     ui.add_space(12.0);
 }
 
-fn course_card(ui: &mut Ui, module: &AssignmentModule, view: GradeView) {
+/// Returns true when "Calculate final grade" was clicked.
+fn course_card(ui: &mut Ui, module: &AssignmentModule, view: GradeView) -> bool {
     let summary = GradeSummary::for_module(module);
     let standing = view.standing(&summary);
     let tint = color(standing);
@@ -292,7 +302,12 @@ fn course_card(ui: &mut Ui, module: &AssignmentModule, view: GradeView) {
                 }
             }
         });
-    });
+        ui.add_space(6.0);
+        ui.button(t("Calculate final grade", "Reikna lokaeinkunn"))
+            .on_hover_text(t("Work out the grades you need for the final grade you want", "Finndu einkunnirnar sem þú þarft fyrir lokaeinkunnina sem þú vilt"))
+            .clicked()
+    })
+    .inner
 }
 
 fn grade_scale(ui: &mut Ui, average: f64, color: egui::Color32) {
