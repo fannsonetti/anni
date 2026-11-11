@@ -15,8 +15,6 @@ pub struct AnniApp {
     shared: Arc<Mutex<AppData>>,
     planner_rect: egui::Rect,
     restore_window: bool,
-    update_gate: Option<crate::updates::Gate>,
-    fullscreen: bool,
 }
 
 impl AnniApp {
@@ -60,12 +58,9 @@ impl AnniApp {
             default_rect
         };
         Self {
-            shared: Arc::new(Mutex::new(AppData::new(cc, mock_mode, desktop_only))),
+            shared: Arc::new(Mutex::new(AppData::new(cc, mock_mode, desktop_only, check_updates, fullscreen))),
             planner_rect,
             restore_window: true,
-            update_gate: check_updates
-                .then(|| crate::updates::Gate::start(&cc.egui_ctx, desktop_only, fullscreen)),
-            fullscreen,
         }
     }
 }
@@ -83,10 +78,19 @@ pub struct AppData {
     background_auth_in_progress: bool,
     phone_auth_url: Option<String>,
     last_diagnostic: Option<Instant>,
+    updater: Option<crate::updates::Background>,
+    install_update: bool,
+    fullscreen: bool,
 }
 
 impl AppData {
-    pub fn new(cc: &eframe::CreationContext<'_>, mock_mode: bool, desktop_only: bool) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        mock_mode: bool,
+        desktop_only: bool,
+        check_updates: bool,
+        fullscreen: bool,
+    ) -> Self {
         theme::apply_theme(&cc.egui_ctx);
         let mut state = AppState::new();
         let (tx, rx) = mpsc::channel();
@@ -151,6 +155,9 @@ impl AppData {
             background_auth_in_progress: false,
             phone_auth_url: None,
             last_diagnostic: None,
+            updater: check_updates.then(crate::updates::Background::new),
+            install_update: false,
+            fullscreen,
         }
     }
 
@@ -402,21 +409,6 @@ impl eframe::App for AnniApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Some(gate) = &mut self.update_gate {
-            match gate.show(ctx) {
-                crate::updates::GateAction::Wait => return,
-                crate::updates::GateAction::Close => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    return;
-                }
-                crate::updates::GateAction::Continue => {
-                    self.update_gate = None;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
-                }
-            }
-        }
         if self.restore_window {
             ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
                 800.0, 480.0,
@@ -448,6 +440,28 @@ impl AppData {
     pub fn service(&mut self, ctx: &egui::Context) {
         self.process_messages(ctx);
         self.periodic_tasks(ctx);
+        self.install_ready_update(ctx);
+    }
+
+    /// Installs right away when nobody is looking at the planner, or when asked.
+    fn install_ready_update(&mut self, ctx: &egui::Context) {
+        let Some(updater) = &mut self.updater else { return };
+        updater.poll(ctx);
+        let Some(staged) = updater.ready.clone() else { return };
+        if self.desktop.quit_requested
+            || self.auth_in_progress
+            || !(self.desktop.planner_hidden || self.install_update)
+        {
+            return;
+        }
+        self.install_update = false;
+        match crate::updates::handoff(&staged, self.desktop.planner_hidden, self.fullscreen) {
+            Ok(()) => self.desktop.handle(crate::desktop::DesktopAction::Quit, ctx, &mut self.state),
+            Err(error) => {
+                tracing::warn!("Update install failed: {error}");
+                self.updater = None;
+            }
+        }
     }
 
     pub fn finish_update(&mut self, ctx: &egui::Context) {
@@ -535,6 +549,12 @@ impl AppData {
                         }
                     });
                 });
+            if let Some(version) = self.updater.as_ref().and_then(|u| u.ready.as_ref()).map(|s| s.version.clone()) {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(format!("Anni {version} {}", t("is ready to install.", "er tilbúið til uppsetningar."))).size(13.0).color(theme::ACCENT));
+                    if ui.small_button(t("Restart to update", "Endurræsa til að uppfæra")).clicked() { self.install_update = true; }
+                });
+            }
             if self.mock_mode {ui.label(RichText::new(t("Demo data · changes are temporary", "Sýnigögn · breytingar eru tímabundnar")).size(12.0).color(theme::WARNING));}
             if self.auth_in_progress && ui.small_button(t("Sign-in details", "Upplýsingar um innskráningu")).clicked(){self.state.navigate(Page::Connection);}
             if !self.mock_mode && !matches!(self.state.connection,ConnectionState::Connected){
@@ -786,6 +806,9 @@ mod tests {
                 background_auth_in_progress: false,
                 phone_auth_url: None,
                 last_diagnostic: None,
+                updater: None,
+                install_update: false,
+                fullscreen: false,
             },
             tx,
         )

@@ -8,7 +8,7 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        mpsc,
     },
     time::{Duration, Instant},
 };
@@ -279,114 +279,83 @@ async fn fetch_and_stage(
     result
 }
 
-pub struct Gate {
-    pub progress: Progress,
-    rx: mpsc::Receiver<Progress>,
-    cancel: Arc<AtomicBool>,
-    started: Instant,
-    finished: Option<Instant>,
-    desktop: bool,
-    fullscreen: bool,
-    handed_off: bool,
+/// Checks, downloads and verifies updates in the background; never blocks startup.
+pub struct Background {
+    rx: Option<mpsc::Receiver<Progress>>,
+    next_check: Instant,
+    pub ready: Option<Staged>,
 }
-pub enum GateAction {
-    Wait,
-    Continue,
-    Close,
-}
-impl Drop for Gate {
-    fn drop(&mut self) {
-        self.cancel.store(true, Ordering::Relaxed);
+impl Background {
+    pub fn new() -> Self {
+        Self { rx: None, next_check: Instant::now(), ready: None }
+    }
+    pub fn poll(&mut self, ctx: &egui::Context) {
+        if self.ready.is_some() {
+            return;
+        }
+        let Some(rx) = &self.rx else {
+            if Instant::now() >= self.next_check {
+                self.rx = Some(start_check(ctx));
+            }
+            return;
+        };
+        let Some(finished) = rx.try_iter().find(|progress| {
+            matches!(progress, Progress::Staged(_) | Progress::Current | Progress::Failed(_))
+        }) else {
+            return;
+        };
+        self.rx = None;
+        // A failure is usually no network yet (Windows sign-in): retry soon.
+        let retry = match finished {
+            Progress::Staged(staged) => {
+                self.ready = Some(staged);
+                return;
+            }
+            Progress::Failed(_) => Duration::from_secs(10 * 60),
+            _ => Duration::from_secs(6 * 60 * 60),
+        };
+        self.next_check = Instant::now() + retry;
     }
 }
-impl Gate {
-    pub fn start(ctx: &egui::Context, desktop: bool, fullscreen: bool) -> Self {
-        let (tx, rx) = mpsc::channel();
-        let cancel = Arc::new(AtomicBool::new(false));
-        let stopped = cancel.clone();
-        let context = ctx.clone();
-        std::thread::spawn(move || {
-            let notify = |progress| {
-                let _ = tx.send(progress);
-                context.request_repaint();
-            };
-            let result = (|| {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|_| "Could not start the update checker.")?;
-                runtime.block_on(async {
-                    let client = client()?;
-                    let response = client
-                        .get(RELEASES_URL)
-                        .header("Accept", "application/vnd.github+json")
-                        .timeout(Duration::from_secs(12))
-                        .send()
-                        .await
-                        .map_err(|_| "Could not reach the update service.")?;
-                    if response.status() == reqwest::StatusCode::NOT_FOUND {
-                        return Ok(Progress::Current);
-                    }
-                    let bytes = read_bounded(response, 2 * 1024 * 1024).await?;
-                    let release = serde_json::from_slice(&bytes)
-                        .map_err(|_| "The update service returned an unreadable release.")?;
-                    let Some(update) = available(release, env!("CARGO_PKG_VERSION"))? else {
-                        return Ok(Progress::Current);
-                    };
-                    fetch_and_stage(&client, update, &cache_dir(), &stopped, &notify)
-                        .await
-                        .map(Progress::Staged)
-                })
-            })();
-            notify(result.unwrap_or_else(Progress::Failed));
-        });
-        Self {
-            progress: Progress::Checking,
-            rx,
-            cancel,
-            started: Instant::now(),
-            finished: None,
-            desktop,
-            fullscreen,
-            handed_off: false,
-        }
-    }
-    pub fn show(&mut self, ctx: &egui::Context) -> GateAction {
-        if self.handed_off {
-            return GateAction::Close;
-        }
-        while let Ok(progress) = self.rx.try_recv() {
-            self.progress = progress;
-        }
-        let skip = crate::ui::updates::show(ctx, &self.progress, self.started.elapsed(), false);
-        if skip {
-            return GateAction::Continue;
-        }
-        if let Progress::Staged(staged) = &self.progress {
-            match handoff(staged, self.desktop, self.fullscreen) {
-                Ok(()) => {
-                    self.handed_off = true;
-                    return GateAction::Close;
+fn start_check(ctx: &egui::Context) -> mpsc::Receiver<Progress> {
+    let (tx, rx) = mpsc::channel();
+    let context = ctx.clone();
+    std::thread::spawn(move || {
+        let notify = |progress| {
+            let _ = tx.send(progress);
+            context.request_repaint();
+        };
+        let result = (|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| "Could not start the update checker.")?;
+            runtime.block_on(async {
+                let client = client()?;
+                let response = client
+                    .get(RELEASES_URL)
+                    .header("Accept", "application/vnd.github+json")
+                    .timeout(Duration::from_secs(12))
+                    .send()
+                    .await
+                    .map_err(|_| "Could not reach the update service.")?;
+                if response.status() == reqwest::StatusCode::NOT_FOUND {
+                    return Ok(Progress::Current);
                 }
-                Err(error) => self.progress = Progress::Failed(error),
-            }
-        }
-        if matches!(self.progress, Progress::Current | Progress::Failed(_)) {
-            let finished = self.finished.get_or_insert_with(Instant::now);
-            let delay = if matches!(self.progress, Progress::Current) {
-                350
-            } else {
-                2200
-            };
-            if finished.elapsed() >= Duration::from_millis(delay)
-                && self.started.elapsed() >= Duration::from_millis(800)
-            {
-                return GateAction::Continue;
-            }
-        }
-        ctx.request_repaint_after(Duration::from_millis(16));
-        GateAction::Wait
-    }
+                let bytes = read_bounded(response, 2 * 1024 * 1024).await?;
+                let release = serde_json::from_slice(&bytes)
+                    .map_err(|_| "The update service returned an unreadable release.")?;
+                let Some(update) = available(release, env!("CARGO_PKG_VERSION"))? else {
+                    return Ok(Progress::Current);
+                };
+                fetch_and_stage(&client, update, &cache_dir(), &AtomicBool::new(false), &notify)
+                    .await
+                    .map(Progress::Staged)
+            })
+        })();
+        notify(result.unwrap_or_else(Progress::Failed));
+    });
+    rx
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -399,7 +368,7 @@ struct InstallJob {
     desktop: bool,
     fullscreen: bool,
 }
-fn handoff(staged: &Staged, desktop: bool, fullscreen: bool) -> Result<(), String> {
+pub fn handoff(staged: &Staged, desktop: bool, fullscreen: bool) -> Result<(), String> {
     let target = std::env::current_exe().map_err(|_| "Could not locate the installed app.")?;
     if !installed(&target) {
         return Err(
@@ -758,6 +727,35 @@ pub fn preview() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn background_check_retries_failures_soon_and_keeps_a_staged_update() {
+        let ctx = egui::Context::default();
+        let mut updater = Background::new();
+        let (tx, rx) = mpsc::channel();
+        updater.rx = Some(rx);
+        tx.send(Progress::Checking).unwrap();
+        updater.poll(&ctx);
+        assert!(updater.rx.is_some(), "still checking");
+        tx.send(Progress::Failed("offline".into())).unwrap();
+        updater.poll(&ctx);
+        assert!(updater.rx.is_none() && updater.ready.is_none());
+        let wait = updater.next_check - Instant::now();
+        assert!(wait > Duration::from_secs(9 * 60) && wait <= Duration::from_secs(10 * 60));
+        updater.poll(&ctx);
+        assert!(updater.rx.is_none(), "no new check before the retry time");
+
+        let (tx, rx) = mpsc::channel();
+        updater.rx = Some(rx);
+        tx.send(Progress::Current).unwrap();
+        updater.poll(&ctx);
+        assert!(updater.next_check - Instant::now() > Duration::from_secs(5 * 60 * 60));
+
+        let (tx, rx) = mpsc::channel();
+        updater.rx = Some(rx);
+        tx.send(Progress::Staged(Staged { version: "9.0.0".into(), installer: "x".into(), checksum: "y".into() })).unwrap();
+        updater.poll(&ctx);
+        assert_eq!(updater.ready.as_ref().unwrap().version, "9.0.0");
+    }
     fn release(version: &str) -> Release {
         let name = format!("Anni-{version}-windows-x64-setup.exe");
         serde_json::from_value(serde_json::json!({"tag_name":format!("v{version}"), "assets":[

@@ -111,20 +111,16 @@ fn main() {
     let options = eframe::NativeOptions {
         // Native auto-save also runs on child widgets. Anni stores root bounds itself.
         persist_window: false,
-        viewport: if check_updates {
-            updates::viewport().with_app_id("anni")
-        } else {
-            egui::ViewportBuilder::default()
-                .with_title(ui::brand::NAME)
-                .with_app_id(if cli.mock { "anni-preview" } else { "anni" })
-                .with_icon(ui::brand::icon())
-                .with_taskbar(false)
-                // All viewports share the root's GL configuration, including its alpha channel.
-                .with_transparent(true)
-                .with_inner_size([1280.0, 860.0])
-                .with_min_inner_size([800.0, 480.0])
-                .with_fullscreen(cli.fullscreen)
-        },
+        viewport: egui::ViewportBuilder::default()
+            .with_title(ui::brand::NAME)
+            .with_app_id(if cli.mock { "anni-preview" } else { "anni" })
+            .with_icon(ui::brand::icon())
+            .with_taskbar(false)
+            // All viewports share the root's GL configuration, including its alpha channel.
+            .with_transparent(true)
+            .with_inner_size([1280.0, 860.0])
+            .with_min_inner_size([800.0, 480.0])
+            .with_fullscreen(cli.fullscreen),
         ..Default::default()
     };
 
