@@ -1,6 +1,6 @@
 ; Build with scripts/build-installer.ps1 (Inno Setup 6.3 or newer).
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.3.1"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\target\release"
