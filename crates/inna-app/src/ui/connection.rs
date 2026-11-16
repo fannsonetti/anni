@@ -44,7 +44,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> ConnectionAction {
                         action = ConnectionAction::ReconnectLocal;
                     }
                 });
-                ui.label(RichText::new(t("Sign in once using Google or your usual INNA method. On startup Anni reuses your session, or tries your remembered Google sign-in in the background. Connect here if your account needs verification.", "Skráðu þig inn einu sinni með Google eða á þinn venjulega hátt í INNU. Við ræsingu notar Anni lotuna aftur eða reynir vistuðu Google-innskráninguna í bakgrunni. Tengstu hér ef staðfesta þarf aðganginn.")).size(13.0).color(TEXT_SECONDARY));
+                ui.label(RichText::new(t("Sign in once using Google or your usual INNA method. After that Anni reuses your session, and when it expires signs in again in the background with your remembered Google login, retrying automatically. Connect here only if your account needs verification.", "Skráðu þig inn einu sinni með Google eða á þinn venjulega hátt í INNU. Eftir það notar Anni lotuna aftur og skráir sig sjálfkrafa inn aftur í bakgrunni með vistuðu Google-innskráningunni þegar hún rennur út. Tengstu hér aðeins ef staðfesta þarf aðganginn.")).size(13.0).color(TEXT_SECONDARY));
                 ui.collapsing(t("Other sign-in options", "Aðrar innskráningarleiðir"), |ui| {
                     if ui
                         .add_enabled(

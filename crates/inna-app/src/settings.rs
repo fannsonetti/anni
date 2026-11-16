@@ -188,6 +188,10 @@ pub struct DesktopSettings {
     pub work_tab: WorkTab,
     /// The language for the whole app; files saved before it existed read as English.
     pub language: crate::locale::Language,
+    /// Sign in again in the background and download fresh INNA data once a day.
+    pub daily_refresh: bool,
+    /// Local time of the daily refresh, in minutes after midnight.
+    pub daily_refresh_minutes: u16,
     /// Files saved before this field existed read as 0.
     #[serde(default)]
     pub layout_version: u8,
@@ -223,12 +227,19 @@ impl Default for DesktopSettings {
             include_reminders: false,
             work_tab: WorkTab::Assignments,
             language: crate::locale::Language::English,
+            daily_refresh: true,
+            daily_refresh_minutes: 7 * 60,
             layout_version: LAYOUT_VERSION,
         }
     }
 }
 
 impl DesktopSettings {
+    pub fn daily_refresh_time(&self) -> chrono::NaiveTime {
+        let minutes = u32::from(self.daily_refresh_minutes.min(24 * 60 - 1));
+        chrono::NaiveTime::from_hms_opt(minutes / 60, minutes % 60, 0).unwrap_or_default()
+    }
+
     pub fn accent_color(&self) -> egui::Color32 {
         self.accent.color(self.theme, self.custom_accent)
     }
@@ -276,6 +287,7 @@ impl DesktopSettings {
                     settings.layout_version = LAYOUT_VERSION;
                 }
                 settings.panel_opacity = settings.panel_opacity.min(80);
+                settings.daily_refresh_minutes = settings.daily_refresh_minutes.min(24 * 60 - 1);
                 settings.clock_scale = settings.clock_scale.clamp(80, 180);
                 settings.panel_width = settings.panel_width.clamp(280, 480);
                 settings.panel_height = settings.panel_height.clamp(360, 800);

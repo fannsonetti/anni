@@ -9,7 +9,25 @@ use egui::RichText;
 use inna_cache::database::Database;
 use inna_core::session::{FileSessionStore, SessionStore};
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// Hidden sign-in retries back off: 15, 30, 60, then every 120 minutes.
+fn restore_retry_delay(failures: u32) -> Duration {
+    Duration::from_secs((15 * 60) << failures.min(3))
+}
+
+/// Whether today's scheduled refresh time has arrived and has not run since.
+fn daily_refresh_due(
+    settings: &crate::settings::DesktopSettings,
+    last_run: Option<chrono::NaiveDateTime>,
+    now: chrono::NaiveDateTime,
+) -> bool {
+    if !settings.daily_refresh {
+        return false;
+    }
+    let slot = now.date().and_time(settings.daily_refresh_time());
+    now >= slot && last_run.is_none_or(|last| last < slot)
+}
 
 pub struct AnniApp {
     shared: Arc<Mutex<AppData>>,
@@ -76,6 +94,13 @@ pub struct AppData {
     last_sync: Option<Instant>,
     auth_in_progress: bool,
     background_auth_in_progress: bool,
+    /// Consecutive failed hidden sign-ins, for retry back-off.
+    restore_failures: u32,
+    next_restore: Option<Instant>,
+    /// Local time the daily refresh last ran (startup counts as one).
+    last_daily_refresh: Option<chrono::NaiveDateTime>,
+    /// The daily refresh skips the retry back-off if the session has expired.
+    daily_refresh_pending: bool,
     phone_auth_url: Option<String>,
     last_diagnostic: Option<Instant>,
     updater: Option<crate::updates::Background>,
@@ -153,6 +178,10 @@ impl AppData {
             last_sync: None,
             auth_in_progress: false,
             background_auth_in_progress: false,
+            restore_failures: 0,
+            next_restore: None,
+            last_daily_refresh: (!mock_mode).then(|| chrono::Local::now().naive_local()),
+            daily_refresh_pending: false,
             phone_auth_url: None,
             last_diagnostic: None,
             updater: check_updates.then(crate::updates::Background::new),
@@ -205,6 +234,9 @@ impl AppData {
                     self.state.connection = ConnectionState::Connected;
                     self.auth_in_progress = false;
                     self.background_auth_in_progress = false;
+                    self.restore_failures = 0;
+                    self.next_restore = None;
+                    self.daily_refresh_pending = false;
                     self.phone_auth_url = None;
                     self.state.storage_dirty = true;
                     self.request_refresh(ctx);
@@ -215,9 +247,8 @@ impl AppData {
                     self.state.connection = ConnectionState::SessionExpired;
                     self.auth_in_progress = false;
                     self.phone_auth_url = None;
-                    if let Some(rt) = &self.runtime {
-                        rt.try_restore_sign_in(ctx.clone());
-                    }
+                    let force = std::mem::take(&mut self.daily_refresh_pending);
+                    self.restore_sign_in(ctx, force);
                 }
                 RuntimeMsg::AuthNeeded => self.state.connection = ConnectionState::Starting,
                 RuntimeMsg::RestoringSignIn => {
@@ -228,6 +259,8 @@ impl AppData {
                 RuntimeMsg::SignInRestoreFailed => {
                     self.auth_in_progress = false;
                     self.background_auth_in_progress = false;
+                    self.next_restore = Some(Instant::now() + restore_retry_delay(self.restore_failures));
+                    self.restore_failures = self.restore_failures.saturating_add(1);
                     self.state.connection = ConnectionState::SessionExpired;
                 }
                 RuntimeMsg::AuthStarted => {
@@ -310,13 +343,49 @@ impl AppData {
         }
     }
 
-    fn periodic_tasks(&mut self, ctx: &egui::Context) {
-        if self.mock_mode
-            || !matches!(
-                self.state.connection,
-                ConnectionState::Connected | ConnectionState::Offline
-            )
+    /// Tries the remembered login in a hidden window, at most once per back-off period
+    /// unless `force`d. Without a saved session (after Disconnect) nothing starts.
+    fn restore_sign_in(&mut self, ctx: &egui::Context, force: bool) {
+        if self.auth_in_progress {
+            return;
+        }
+        let now = Instant::now();
+        if !force && self.next_restore.is_some_and(|at| now < at) {
+            return;
+        }
+        self.next_restore = Some(now + restore_retry_delay(self.restore_failures));
+        if let Some(rt) = &self.runtime {
+            rt.try_restore_sign_in(ctx.clone());
+        }
+    }
+
+    /// At the chosen time each day: check the session, sign in again if needed, refresh.
+    fn run_daily_refresh(&mut self, ctx: &egui::Context, now: chrono::NaiveDateTime) {
+        if self.auth_in_progress
+            || self.state.refreshing
+            || !daily_refresh_due(&self.desktop.settings, self.last_daily_refresh, now)
         {
+            return;
+        }
+        let Some(rt) = &self.runtime else { return };
+        self.last_daily_refresh = Some(now);
+        self.daily_refresh_pending = true;
+        // Connected refreshes the data; SessionExpired starts a hidden sign-in first.
+        rt.start_session_check(ctx.clone());
+    }
+
+    fn periodic_tasks(&mut self, ctx: &egui::Context) {
+        if self.mock_mode {
+            return;
+        }
+        self.run_daily_refresh(ctx, chrono::Local::now().naive_local());
+        if self.state.connection == ConnectionState::SessionExpired {
+            self.restore_sign_in(ctx, false);
+        }
+        if !matches!(
+            self.state.connection,
+            ConnectionState::Connected | ConnectionState::Offline
+        ) {
             return;
         }
         let now = Instant::now();
@@ -813,6 +882,10 @@ mod tests {
                 last_sync: None,
                 auth_in_progress: false,
                 background_auth_in_progress: false,
+                restore_failures: 0,
+                next_restore: None,
+                last_daily_refresh: None,
+                daily_refresh_pending: false,
                 phone_auth_url: None,
                 last_diagnostic: None,
                 updater: None,
@@ -1068,5 +1141,52 @@ mod tests {
         app.process_messages(&egui::Context::default());
         assert_eq!(app.state.connection, ConnectionState::Connected);
         assert!(app.state.refresh_requested);
+    }
+
+    #[test]
+    fn daily_refresh_runs_once_after_the_chosen_time_and_catches_up_after_sleep() {
+        let at = |day: u32, h: u32, m: u32| {
+            chrono::NaiveDate::from_ymd_opt(2026, 11, day).unwrap().and_hms_opt(h, m, 0).unwrap()
+        };
+        let mut settings = crate::settings::DesktopSettings::default();
+        settings.daily_refresh_minutes = 7 * 60 + 30;
+        // Before the time: nothing. After it: due once.
+        assert!(!daily_refresh_due(&settings, Some(at(16, 6, 0)), at(16, 7, 29)));
+        assert!(daily_refresh_due(&settings, Some(at(16, 6, 0)), at(16, 7, 30)));
+        assert!(!daily_refresh_due(&settings, Some(at(16, 7, 30)), at(16, 12, 0)));
+        // Asleep at 07:30: runs as soon as the computer wakes.
+        assert!(daily_refresh_due(&settings, Some(at(15, 7, 30)), at(16, 13, 5)));
+        // Starting Anni after the time counts as today's refresh.
+        assert!(!daily_refresh_due(&settings, Some(at(16, 9, 0)), at(16, 9, 1)));
+        // Moving the time later today schedules another one.
+        settings.daily_refresh_minutes = 15 * 60;
+        assert!(daily_refresh_due(&settings, Some(at(16, 9, 0)), at(16, 15, 0)));
+        settings.daily_refresh = false;
+        assert!(!daily_refresh_due(&settings, None, at(16, 23, 59)));
+    }
+
+    #[test]
+    fn failed_background_signin_is_retried_later_with_back_off() {
+        let (mut app, tx) = test_app();
+        let ctx = egui::Context::default();
+        tx.send(RuntimeMsg::RestoringSignIn).unwrap();
+        tx.send(RuntimeMsg::SignInRestoreFailed).unwrap();
+        app.process_messages(&ctx);
+        assert_eq!(app.state.connection, ConnectionState::SessionExpired);
+        let first = app.next_restore.unwrap().duration_since(Instant::now());
+        assert!(first > Duration::from_secs(14 * 60) && first <= Duration::from_secs(15 * 60));
+        tx.send(RuntimeMsg::SignInRestoreFailed).unwrap();
+        app.process_messages(&ctx);
+        assert!(app.next_restore.unwrap().duration_since(Instant::now()) > Duration::from_secs(29 * 60));
+        assert_eq!(restore_retry_delay(10), Duration::from_secs(120 * 60));
+        // The daily refresh bypasses the back-off; a success resets it.
+        app.daily_refresh_pending = true;
+        tx.send(RuntimeMsg::SessionExpired).unwrap();
+        app.process_messages(&ctx);
+        assert!(!app.daily_refresh_pending);
+        tx.send(RuntimeMsg::Connected(mock::mock_user())).unwrap();
+        app.process_messages(&ctx);
+        assert_eq!(app.restore_failures, 0);
+        assert!(app.next_restore.is_none());
     }
 }

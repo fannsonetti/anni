@@ -295,6 +295,22 @@ impl Desktop {
             }
         });
 
+        section(ui, t("Automatic refresh", "Sjálfvirk uppfærsla"), |ui| {
+            setting_check(ui, t("Refresh every day", "Uppfæra daglega"), &mut self.settings.daily_refresh);
+            let enabled = self.settings.daily_refresh;
+            let mut hour = self.settings.daily_refresh_minutes / 60;
+            let mut minute = self.settings.daily_refresh_minutes % 60;
+            setting_row(ui, t("Time", "Tími"), |ui| {
+                let two_digits = |value: f64, _| format!("{:02}", value as u16);
+                // Right-to-left row: minutes are added first.
+                ui.add_enabled(enabled, egui::DragValue::new(&mut minute).range(0..=59).speed(0.2).custom_formatter(two_digits));
+                ui.label(":");
+                ui.add_enabled(enabled, egui::DragValue::new(&mut hour).range(0..=23).speed(0.1).custom_formatter(two_digits));
+            });
+            self.settings.daily_refresh_minutes = hour.min(23) * 60 + minute.min(59);
+            hint(ui, t("At this time each day Anni signs in to INNA in the background with your remembered login and downloads fresh data, without any clicks. If the computer is off or asleep then, it refreshes as soon as Anni runs again. While connected, Anni also checks for new data every 5 minutes, and an expired sign-in is retried automatically.", "Á þessum tíma á hverjum degi skráir Anni sig inn í INNU í bakgrunni með vistuðu innskráningunni og sækir ný gögn, án þess að þú þurfir að smella. Ef slökkt er á tölvunni eða hún í dvala þá uppfærist Anni um leið og það keyrir aftur. Meðan tengt er athugar Anni líka með ný gögn á 5 mínútna fresti og reynir sjálfkrafa aftur ef innskráningin rennur út."));
+        });
+
         let settings = &mut self.settings;
         section(ui, t("Appearance", "Útlit"), |ui| {
             ui.label(t("Theme", "Þema"));
@@ -394,7 +410,13 @@ impl Desktop {
             setting_check(ui, t("Seconds", "Sekúndur"), &mut settings.show_seconds);
         });
         if ui.button(t("Reset appearance", "Endurstilla útlit")).clicked() {
-            *settings = DesktopSettings { enabled: settings.enabled, language: settings.language, ..Default::default() };
+            *settings = DesktopSettings {
+                enabled: settings.enabled,
+                language: settings.language,
+                daily_refresh: settings.daily_refresh,
+                daily_refresh_minutes: settings.daily_refresh_minutes,
+                ..Default::default()
+            };
         }
         ui.add_space(12.0);
         action

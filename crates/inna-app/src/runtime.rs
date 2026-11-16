@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    mpsc,
+    mpsc, Arc,
 };
 
 pub enum RuntimeMsg {
@@ -38,7 +38,8 @@ pub struct Runtime {
     // Never dropped: that blocks until spawn_blocking work ends, so closing during the
     // 60 s background sign-in left a windowless Anni holding the single-instance lock.
     rt: std::mem::ManuallyDrop<tokio::runtime::Runtime>,
-    automatic_auth_attempted: AtomicBool,
+    /// Only one hidden sign-in runs at a time; the app decides when to retry.
+    restore_in_flight: Arc<AtomicBool>,
 }
 
 impl Runtime {
@@ -51,7 +52,7 @@ impl Runtime {
         Self {
             tx,
             rt: std::mem::ManuallyDrop::new(rt),
-            automatic_auth_attempted: AtomicBool::new(false),
+            restore_in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -97,18 +98,20 @@ impl Runtime {
         });
     }
 
-    pub fn try_restore_sign_in(&self, ctx: egui::Context) {
+    /// Starts a hidden sign-in with the remembered login. Returns whether one started.
+    pub fn try_restore_sign_in(&self, ctx: egui::Context) -> bool {
         // A saved session is required: Disconnect must stay disconnected.
         if !inna_core::auth_profile::data_path().is_dir()
             || !matches!(
                 FileSessionStore::new(FileSessionStore::default_path()).load(),
                 Ok(Some(_))
             )
-            || self.automatic_auth_attempted.swap(true, Ordering::SeqCst)
+            || self.restore_in_flight.swap(true, Ordering::SeqCst)
         {
-            return;
+            return false;
         }
         let tx = self.tx.clone();
+        let in_flight = self.restore_in_flight.clone();
         let _ = tx.send(RuntimeMsg::RestoringSignIn);
         self.rt.spawn(async move {
             let restored = tokio::task::spawn_blocking(|| run_local_helper(true)).await;
@@ -116,12 +119,14 @@ impl Runtime {
                 Ok(Ok(session)) => validate_and_save_session(session).await.ok(),
                 _ => None,
             };
+            in_flight.store(false, Ordering::SeqCst);
             let _ = tx.send(match user {
                 Some(user) => RuntimeMsg::Connected(user),
                 None => RuntimeMsg::SignInRestoreFailed,
             });
             ctx.request_repaint();
         });
+        true
     }
 
     pub fn launch_auth(&self, ctx: egui::Context, phone: bool) {
