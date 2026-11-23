@@ -52,6 +52,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check tag is on main and matches the app version
+        shell: pwsh
+        run: |
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "$env:GITHUB_REF_NAME is not on main. Tag a commit on main." }
+          $version = [regex]::Match((Get-Content crates/inna-app/Cargo.toml -Raw), '(?m)^version\s*=\s*"([^"]+)"').Groups[1].Value
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME does not match inna-app version $version." }
       - uses: actions/download-artifact@v4
         with:
           name: Anni-windows-x64
